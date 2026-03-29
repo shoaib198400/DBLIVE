@@ -1,0 +1,6 @@
+﻿Snapshot: Step1
+CreatedOn: 2026-03-15 11:04:31
+SourcePath: D:\SHOAIB\VS CODE PROJECTS\EXCEPTION SNAPSHOT DASHBOARD
+Files:
+- app.py
+- launch_exception_dashboard.cmd
