@@ -1,16 +1,129 @@
-"""
-╔══════════════════════════════════════════════════════════════════════════╗
-║               SOD Exception Dashboard  —  app.py                       ║
-║  Hindustan Petroleum Corporation Limited (HPCL)                         ║
-║  Supply & Operations Division — Exception Monitoring System             ║
-╚══════════════════════════════════════════════════════════════════════════╝
+import base64
+import pandas as pd
+import html
+import os
+from io import BytesIO
+from datetime import datetime
+import plotly.express as px
+import streamlit as st
+import warnings
+warnings.filterwarnings("ignore", category=UserWarning, module="openpyxl")
 
-Usage:
-    streamlit run app.py
+# --- LOCATION VISIT DATA LOADING & MAPPING ---
+try:
+    df_loc = pd.read_excel("Reports/LOCATION_VISIT.xls")
+except Exception:
+    df_loc = pd.DataFrame()
 
-Tech Stack:
-    Python | Streamlit | Pandas | OpenPyXL | Plotly
-"""
+zone_mapping = {
+    "NCZ": "North Central Zone (NCZ)",
+    "NWF": "North West Frontier Zone (NWFZ)",
+    "NZ": "North Zone (NZ)",
+    "SZ": "South Zone (SZ)",
+    "SWZ": "South West Zone (SWZ)",
+    "WZ": "West Zone (WZ)",
+    "ECZ": "East Central Zone (ECZ)",
+    "SCZ": "South Central Zone (SCZ)",
+    "EZ": "East Zone (EZ)",
+    "NWZ": "North West Zone (NWZ)",
+    "CNT": "Central Zone (CZ)",
+    "NFZ": "North Frontier Zone (NFZ)"
+}
+reverse_zone_mapping = {v: k for k, v in zone_mapping.items()}
+
+def render_location_visit_details(df):
+    if df is None or df.empty:
+        st.warning("No data available")
+        return
+    import pandas as pd
+    import numpy as np
+    # Load PlantMaster for SBU Zone mapping
+    try:
+        plant_master = pd.read_excel(PLANT_MASTER_PATH, engine="openpyxl")
+    except Exception:
+        plant_master = pd.DataFrame()
+    zone_map = {}
+    if not plant_master.empty and "Plant Code" in plant_master.columns and "Zone Name" in plant_master.columns:
+        zone_map = dict(zip(plant_master["Plant Code"], plant_master["Zone Name"]))
+
+    df_work = df.copy()
+    # Convert columns to numeric, treat non-numeric as 0
+    for col in ["TotalRecomms", "OpenRecomms", "ClosedRecomms"]:
+        if col in df_work.columns:
+            df_work[col] = pd.to_numeric(df_work[col], errors="coerce").fillna(0)
+
+    # Map SBU Zone from PlantMaster if not present
+    if "SBU Zone" not in df_work.columns and "Planning Plant" in df_work.columns:
+        df_work["SBU Zone"] = df_work["Planning Plant"].map(zone_map)
+
+    # Deduplicate: for each Planning Plant + Audit Number, keep row with highest TotalRecomms
+    if "Planning Plant" in df_work.columns and "Audit Number" in df_work.columns:
+        df_work = df_work.sort_values("TotalRecomms", ascending=False)
+        df_work = df_work.drop_duplicates(subset=["Planning Plant", "Audit Number"], keep="first")
+
+    # Robustly format dates: try common formats, fallback to dateutil
+    for col in ["Audit Start Date", "Audit End Date"]:
+        if col in df_work.columns:
+            # Try common formats first
+            parsed = None
+            for fmt in ("%d/%m/%Y", "%Y-%m-%d", "%d-%m-%Y", "%m/%d/%Y"):
+                try:
+                    parsed = pd.to_datetime(df_work[col], format=fmt, errors='raise')
+                    break
+                except Exception:
+                    continue
+            if parsed is None:
+                # Fallback to dateutil
+                parsed = pd.to_datetime(df_work[col], errors='coerce')
+            df_work[col] = parsed.dt.strftime("%d/%m/%Y")
+
+    # Pivot: group by Planning Plant and show required fields, sum the three columns
+    group_cols = [col for col in ["SBU Zone", "Planning Plant", "Plant Desc.", "Audit Number", "Audit Start Date", "Audit End Date", "Audit Status"] if col in df_work.columns]
+    agg_dict = {"TotalRecomms": "sum", "OpenRecomms": "sum", "ClosedRecomms": "sum"}
+    df_pivot = df_work.groupby(group_cols, dropna=False).agg(agg_dict).reset_index()
+
+    display_cols = [
+        "SBU Zone", "Planning Plant", "Plant Desc.", "Audit Number",
+        "Audit Start Date", "Audit End Date", "Audit Status",
+        "TotalRecomms", "OpenRecomms", "ClosedRecomms"
+    ]
+    col_labels = {
+        "SBU Zone": "Zone",
+        "Planning Plant": "Plant Code",
+        "Plant Desc.": "Plant Description",
+        "Audit Number": "Audit Number",
+        "Audit Start Date": "Audit Start Date",
+        "Audit End Date": "Audit End Date",
+        "Audit Status": "Audit Status",
+        "TotalRecomms": "Total Recomm.",
+        "OpenRecomms": "Open Recomm.",
+        "ClosedRecomms": "Closed Recomm."
+    }
+    df_display = df_pivot[[c for c in display_cols if c in df_pivot.columns]].copy()
+    st.subheader("Location Visit Details")
+    _render_html_table(df_display, col_labels=col_labels, max_height=420)
+    # Download as Excel
+    to_download = df_display.copy()
+    try:
+        import io
+        output = io.BytesIO()
+        with pd.ExcelWriter(output, engine="openpyxl") as writer:
+            to_download.to_excel(writer, index=False, sheet_name="LocationVisit")
+        data = output.getvalue()
+        st.download_button(
+            label="Download Data (Excel)",
+            data=data,
+            file_name="location_visit_details.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        )
+    except Exception:
+        csv = df_display.to_csv(index=False).encode('utf-8')
+        st.download_button(
+            label="Download Data (CSV)",
+            data=csv,
+            file_name="location_visit_details.csv",
+            mime="text/csv"
+        )
 
 import base64
 import pandas as pd
@@ -2060,7 +2173,7 @@ def kpi_card(
     </div>
     """, unsafe_allow_html=True)
     return st.button("📋 View Details →", key=key or f"btn_{label}",
-                     use_container_width=True)
+                     width='stretch')
 
 
 def render_open_delivery_tile(open_delivery_result: dict) -> bool:
@@ -2316,44 +2429,18 @@ def render_sidebar(df_plant: pd.DataFrame) -> tuple:
         st.markdown(f"""
         <div class="sidebar-branding">
             {sidebar_logo_html}
-            <div style="font-size:1.2rem;font-weight:700;letter-spacing:.06em;
-                        color:#FFFFFF;">HPCL</div>
-            <div style="font-size:0.75rem;opacity:.7;color:#AACCFF;">
-                Exception Monitoring</div>
-        </div>
-        <!-- Removed extra white line -->
-        """, unsafe_allow_html=True)
-
-        # Navigation Filters moved to dashboard
-        # Removed from sidebar
-        st.markdown("<hr/>", unsafe_allow_html=True)
-
-        st.markdown('<p class="sb-nav-lbl">&#9889; Critical Views</p>',
-                    unsafe_allow_html=True)
-        st.markdown("""
-        <div class="sb-critical-box">
-            <p class="sb-critical-title">Quick exception drilldowns</p>
-            <p class="sb-critical-subtitle">Open the highest-risk zones, locations, and shortage vehicles directly from the sidebar.</p>
+            <div style="font-size:1.2rem;font-weight:700;letter-spacing:.06em;color:#FFFFFF;">HPCL</div>
+            <div style="font-size:0.75rem;opacity:.7;color:#AACCFF;">Exception Monitoring</div>
         </div>
         """, unsafe_allow_html=True)
 
-        sidebar_pages = [
-            ("Top 3 Zones by Exceptions", "top_exception_zones", "sb_top_exception_zones"),
-            ("Top 10 Locations by Exceptions", "top_exception_locations", "sb_top_exception_locations"),
-            ("Top 3 Zones by Shortage Qty", "top_shortage_zones", "sb_top_shortage_zones"),
-            ("Top 10 Locations by Shortage Qty", "top_shortage_locations", "sb_top_shortage_locations"),
-            ("Top 10 TT Numbers by Sales Shortage Qty", "top_short_sales_vehicles", "sb_top_short_sales_vehicles"),
-            ("Top 10 Vehicles by STO Shortage Qty", "top_short_sto_vehicles", "sb_top_short_sto_vehicles"),
-        ]
-        for label, page_name, button_key in sidebar_pages:
-            if st.button(label, use_container_width=True, key=button_key):
-                st.session_state["page"] = page_name
-                st.rerun()
 
-        st.markdown("<hr/>", unsafe_allow_html=True)
 
-        st.markdown('<p class="sb-nav-lbl">&#8505;&#65039; System Info</p>',
-                    unsafe_allow_html=True)
+
+        # Use Streamlit's default sidebar collapse/expand button for robust functionality
+        # No custom restore button injected
+
+        st.markdown('<p class="sb-nav-lbl">&#8505;&#65039; System Info</p>', unsafe_allow_html=True)
         system_info_slot = st.empty()
         _render_sidebar_system_info(
             system_info_slot,
@@ -2363,8 +2450,9 @@ def render_sidebar(df_plant: pd.DataFrame) -> tuple:
         )
 
         st.markdown("<hr/>", unsafe_allow_html=True)
-        if st.button("&#128260; Refresh Data", use_container_width=True,
-                     key="btn_refresh"):
+        import uuid
+        unique_refresh_key = f"btn_refresh_{uuid.uuid4()}"
+        if st.button("&#128260; Refresh Data", width='stretch', key=unique_refresh_key):
             st.cache_data.clear()
             st.rerun()
 
@@ -2372,10 +2460,11 @@ def render_sidebar(df_plant: pd.DataFrame) -> tuple:
 
         st.markdown('<p class="sb-nav-lbl">&#128194; Data Upload</p>',
                     unsafe_allow_html=True)
+        unique_uploader_key = f"uploader_pending_dc_{uuid.uuid4()}"
         uploaded_dc = st.file_uploader(
             "Pending DC File  (.xls / .xlsx)",
             type = ["xls", "xlsx"],
-            key  = "uploader_pending_dc",
+            key  = unique_uploader_key,
         )
 
     return None, None, uploaded_dc, system_info_slot
@@ -2393,24 +2482,27 @@ def _render_html_table(df: pd.DataFrame, col_labels: dict = None, max_height: in
     display_df = df.copy()
     if col_labels:
         display_df = display_df.rename(columns=col_labels)
+    # Professional Streamlit-styled table: light bluish header, centered data
+    header_bg = "#eaf2fb"  # light bluish
+    header_color = "#003087"  # deep blue for text
+    cell_bg_odd = "#ffffff"
+    cell_bg_even = "#f7fafd"
     headers_html = "".join(
-        f"<th style='background:#f5f7fa;color:#222;font-weight:600;text-align:center;padding:8px;border-bottom:1px solid #e0e0e0;'>{html.escape(str(c))}</th>" for c in display_df.columns
+        f"<th style='background:{header_bg};color:{header_color};font-weight:700;text-align:center;padding:10px 8px;font-size:16px;border-bottom:2px solid #d5e2f3;'>{html.escape(str(c))}</th>" for c in display_df.columns
     )
     rows_html = "".join(
-        "<tr>"
+        f"<tr style='background:{cell_bg_odd if i%2==0 else cell_bg_even};'>"
         + "".join(
-            f"<td style='text-align:center;padding:6px;border-bottom:1px solid #f0f0f0;'>{html.escape(str(v) if pd.notna(v) else '')}</td>"
+            f"<td style='text-align:center;padding:8px 6px;font-size:15px;border-bottom:1px solid #e2eaf4;'>{html.escape(str(v) if pd.notna(v) else '')}</td>"
             for v in row
         )
         + "</tr>"
-        for _, row in display_df.iterrows()
+        for i, (_, row) in enumerate(display_df.iterrows())
     )
     st.markdown(
-        f'<div class="pro-table-wrap" style="max-height:{max_height}px;overflow:auto;border-radius:6px;border:1px solid #e0e0e0;background:#fff;box-shadow:0 2px 8px #e0e0e0;">'
+        f'<div class="pro-table-wrap" style="max-height:{max_height}px;overflow:auto;border-radius:8px;border:1px solid #d5e2f3;background:#fff;box-shadow:0 2px 8px #e0e0e0;">'
         f'<table class="pro-table" style="width:100%;border-collapse:collapse;font-size:15px;">'
-        f'<thead style="background:#f5f7fa;">'
-        f'<tr>{headers_html}</tr>'
-        f'</thead>'
+        f'<thead><tr>{headers_html}</tr></thead>'
         f'<tbody>{rows_html}</tbody>'
         f'</table></div>',
         unsafe_allow_html=True,
@@ -2437,20 +2529,10 @@ def render_dashboard(
     plant_filter       : list,
 ) -> None:
     """Main dashboard page with KPI tiles, zone chart, and plant table."""
+
+
+
     render_header()
-
-    # Active filter badges
-    if zone_filter or plant_filter:
-        badges = "".join(
-            [f'<span class="fbadge">&#128205; {z}</span>' for z in zone_filter]
-            + [f'<span class="fbadge">&#127981; {p}</span>' for p in plant_filter]
-        )
-        st.markdown(
-            f'<div style="margin-bottom:12px;font-size:15px;">'
-            f'Active Filters:&nbsp;{badges}</div>',
-            unsafe_allow_html=True,
-        )
-
     # ── Navigation Filters (Zone & Plant) ────────────────────────────────────
     st.markdown('<div class="sec-title">&#128205; Navigation Filters</div>', unsafe_allow_html=True)
     filters_col1, filters_col2 = st.columns([1, 1])
@@ -2464,6 +2546,44 @@ def render_dashboard(
         else:
             filtered_plants = plant_list
         selected_plant = st.selectbox("Select Plant / Location", ["All Plants"] + filtered_plants, key="plant_filter")
+
+    # --- LOCATION VISIT KPI LOGIC (after navigation filters) ---
+    df_loc_work = df_loc.copy()
+    # Step 3: Data cleaning & transformation
+    if not df_loc_work.empty:
+        for col in ["Audit Start Date", "Audit End Date"]:
+            if col in df_loc_work.columns:
+                df_loc_work[col] = pd.to_datetime(df_loc_work[col], errors='coerce')
+        if "TotalRecomms" in df_loc_work.columns:
+            df_loc_work = df_loc_work.sort_values("TotalRecomms", ascending=False)
+        if "Planning Plant" in df_loc_work.columns:
+            df_loc_work = df_loc_work.drop_duplicates(subset=["Planning Plant"], keep="first")
+
+    # Step 4: Apply filters
+    df_loc_filtered = df_loc_work.copy()
+    # Match dashboard filter logic
+    if selected_zone != "All Zones":
+        mapped_zone = zone_mapping.get(selected_zone, selected_zone)
+        if "SBU Zone" in df_loc_filtered.columns:
+            df_loc_filtered = df_loc_filtered[df_loc_filtered["SBU Zone"] == mapped_zone]
+    if selected_plant != "All Plants":
+        if "Planning Plant" in df_loc_filtered.columns:
+            df_loc_filtered = df_loc_filtered[df_loc_filtered["Planning Plant"] == selected_plant]
+
+    # Step 5: KPI value
+    kpi_location_visit = df_loc_filtered["Planning Plant"].nunique() if "Planning Plant" in df_loc_filtered.columns else 0
+
+    # Active filter badges
+    if zone_filter or plant_filter:
+        badges = "".join(
+            [f'<span class="fbadge">&#128205; {z}</span>' for z in zone_filter]
+            + [f'<span class="fbadge">&#127981; {p}</span>' for p in plant_filter]
+        )
+        st.markdown(
+            f'<div style="margin-bottom:12px;font-size:15px;">'
+            f'Active Filters:&nbsp;{badges}</div>',
+            unsafe_allow_html=True,
+        )
 
     # Apply filtering to all dashboard data
     def filter_df(df):
@@ -2520,30 +2640,38 @@ def render_dashboard(
             color_class = color_cls,
             key = "tile_pending_dc",
         )
+        st.write(f"[DEBUG] Pending DC Clicked: {clicked_dc}")
         if clicked_dc:
             st.session_state["page"] = "pending_dc_details"
+            st.write(f"[DEBUG] Set page to: {st.session_state['page']}")
             st.rerun()
 
     with col2:
         s_df = open_delivery_result_filtered.get("summary_df", pd.DataFrame())
         total_deliveries = int(s_df["Open Delivery Count"].sum()) if not s_df.empty and "Open Delivery Count" in s_df.columns else 0
         clicked_open = render_open_delivery_tile({**open_delivery_result_filtered, "total_count": total_deliveries})
+        st.write(f"[DEBUG] Open Delivery Clicked: {clicked_open}")
         if clicked_open:
             st.session_state["page"] = "open_delivery_details"
+            st.write(f"[DEBUG] Set page to: {st.session_state['page']}")
             st.rerun()
     with col3:
         s_df = pending_invoices_result_filtered.get("summary_df", pd.DataFrame())
         total_invoices = int(s_df["Pending Invoice Count"].sum()) if not s_df.empty and "Pending Invoice Count" in s_df.columns else 0
         clicked_pending_inv = render_pending_invoices_tile({**pending_invoices_result_filtered, "total_count": total_invoices})
+        st.write(f"[DEBUG] Pending Invoices Clicked: {clicked_pending_inv}")
         if clicked_pending_inv:
             st.session_state["page"] = "pending_invoices_details"
+            st.write(f"[DEBUG] Set page to: {st.session_state['page']}")
             st.rerun()
     with col4:
         s_df = open_sales_orders_result_filtered.get("summary_df", pd.DataFrame())
         total_so = int(s_df["Open Sales Order Count"].sum()) if not s_df.empty and "Open Sales Order Count" in s_df.columns else 0
         clicked_open_so = render_open_sales_orders_tile({**open_sales_orders_result_filtered, "total_count": total_so})
+        st.write(f"[DEBUG] Open Sales Orders Clicked: {clicked_open_so}")
         if clicked_open_so:
             st.session_state["page"] = "open_sales_orders_details"
+            st.write(f"[DEBUG] Set page to: {st.session_state['page']}")
             st.rerun()
 
     st.markdown("<div style='height:14px'></div>", unsafe_allow_html=True)
@@ -2554,33 +2682,89 @@ def render_dashboard(
         s_df = open_intransit_result_filtered.get("summary_df", pd.DataFrame())
         total_intransit = int(s_df["Open In-Transit STO Count"].sum()) if not s_df.empty and "Open In-Transit STO Count" in s_df.columns else 0
         clicked_intransit = render_open_intransit_tile({**open_intransit_result_filtered, "total_count": total_intransit})
+        st.write(f"[DEBUG] Open Intransit Clicked: {clicked_intransit}")
         if clicked_intransit:
             st.session_state["page"] = "open_intransit_details"
+            st.write(f"[DEBUG] Set page to: {st.session_state['page']}")
             st.rerun()
     with col6:
         s_df = open_short_sales_result_filtered.get("summary_df", pd.DataFrame())
         total_short_sales = int(s_df["Total Shortage Quantity (in Ltrs)"].sum()) if not s_df.empty and "Total Shortage Quantity (in Ltrs)" in s_df.columns else 0
         clicked_short_sales = render_open_shortages_sales_tile({**open_short_sales_result_filtered, "total_count": total_short_sales})
+        st.write(f"[DEBUG] Open Short Sales Clicked: {clicked_short_sales}")
         if clicked_short_sales:
             st.session_state["page"] = "open_shortages_sales_details"
+            st.write(f"[DEBUG] Set page to: {st.session_state['page']}")
             st.rerun()
     with col7:
         s_df = open_short_sto_result_filtered.get("summary_df", pd.DataFrame())
         total_short_sto = int(s_df["Total STO Shortage Quantity (in Ltrs)"].sum()) if not s_df.empty and "Total STO Shortage Quantity (in Ltrs)" in s_df.columns else 0
         clicked_short_sto = render_open_shortages_sto_tile({**open_short_sto_result_filtered, "total_count": total_short_sto})
+        st.write(f"[DEBUG] Open Short STO Clicked: {clicked_short_sto}")
         if clicked_short_sto:
             st.session_state["page"] = "open_shortages_sto_details"
+            st.write(f"[DEBUG] Set page to: {st.session_state['page']}")
             st.rerun()
     with col8:
         s_df = tank_reco_result_filtered.get("summary_df", pd.DataFrame())
         total_tank_reco = int(s_df["Tank Reco Count"].sum()) if not s_df.empty and "Tank Reco Count" in s_df.columns else 0
         clicked_tank = render_tank_reco_tile({**tank_reco_result_filtered, "total_count": total_tank_reco})
+        st.write(f"[DEBUG] Tank Reco Clicked: {clicked_tank}")
         if clicked_tank:
             st.session_state["page"] = "tank_reco_details"
+            st.write(f"[DEBUG] Set page to: {st.session_state['page']}")
             st.rerun()
 
     st.markdown("<div style='height:10px'></div>", unsafe_allow_html=True)
 
+    # ── Row 3: New KPI tiles (Coming Soon) ───────────────────────────────
+    col9, col10, col11, col12 = st.columns(4, gap="small")
+    with col9:
+        kpi_card(
+            label="PL Unblock Qty",
+            value="-",
+            detail="Coming Soon",
+            icon="&#128295;",
+            color_class="c-muted",
+            key="tile_pl_unblock_qty",
+        )
+    with col10:
+        kpi_card(
+            label="Dummy Tank Qty.",
+            value="-",
+            detail="Coming Soon",
+            icon="&#128736;",
+            color_class="c-muted",
+            key="tile_dummy_tank_qty",
+        )
+    with col11:
+        kpi_card(
+            label="Tank Churn",
+            value="-",
+            detail="Coming Soon",
+            icon="&#128167;",
+            color_class="c-muted",
+            key="tile_tank_churn",
+        )
+    with col12:
+        # Step 6: KPI tile UI for Location Visit (use kpi_card for alignment)
+        clicked_location_visit = kpi_card(
+            label="Location Visit",
+            value=kpi_location_visit,
+            detail="Total Location Visits",
+            icon="&#128205;",
+            color_class="c-success" if kpi_location_visit > 0 else "c-muted",
+            key="tile_location_visit"
+        )
+        st.write(f"[DEBUG] Location Visit Clicked: {clicked_location_visit}")
+        if clicked_location_visit:
+            st.session_state["selected_tile"] = "location_visit"
+            st.write(f"[DEBUG] Set selected_tile to: {st.session_state['selected_tile']}")
+    st.markdown("<div style='height:10px'></div>", unsafe_allow_html=True)
+
+    # Step 8: Connect drilldown
+    if st.session_state.get("selected_tile") == "location_visit":
+        render_location_visit_details(df_loc_filtered)
     # --- Restore bar and donut diagrams with defensive checks ---
     try:
         exception_kpi_df = _build_exception_kpi_chart_df(
@@ -2757,7 +2941,7 @@ def _render_exception_kpi_charts(chart_df: pd.DataFrame) -> None:
                 range=[0, y_upper],
             ),
         )
-        st.plotly_chart(fig_bar, use_container_width=True, config={"displayModeBar": False})
+        st.plotly_chart(fig_bar, width='stretch', config={"displayModeBar": False})
 
     with pie_col:
         pie_df = chart_df.copy()
@@ -2796,7 +2980,7 @@ def _render_exception_kpi_charts(chart_df: pd.DataFrame) -> None:
                 )
             ],
         )
-        st.plotly_chart(fig_pie, use_container_width=True, config={"displayModeBar": False})
+        st.plotly_chart(fig_pie, width='stretch', config={"displayModeBar": False})
 
         legend_rows = "".join(
             f'<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;padding:2px 0;">'
@@ -3213,7 +3397,7 @@ def _render_ranked_bar_chart(
         yaxis=dict(showgrid=False),
         title_font=dict(size=18, color="#163A63"),
     )
-    st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
+    st.plotly_chart(fig, width='stretch', config={"displayModeBar": False})
 
 
 def _render_zone_exception_overview(zone_exception_summary_df: pd.DataFrame) -> None:
@@ -3263,7 +3447,7 @@ def _render_zone_exception_overview(zone_exception_summary_df: pd.DataFrame) -> 
         xaxis=dict(tickangle=-28, title=None, showgrid=False, zeroline=False),
         yaxis=dict(title="Total Exceptions", gridcolor="#DCE6F2", zeroline=False, range=[0, y_upper]),
     )
-    st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
+    st.plotly_chart(fig, width='stretch', config={"displayModeBar": False})
 
 
 def render_zone_exception_drilldown(
@@ -3329,7 +3513,7 @@ def render_zone_exception_drilldown(
         )
         fig_top_zones.update_traces(marker_color="#003087", textposition="outside")
         fig_top_zones.update_layout(height=360, margin=dict(l=10, r=10, t=10, b=10), showlegend=False)
-        st.plotly_chart(fig_top_zones, use_container_width=True, config={"displayModeBar": False})
+        st.plotly_chart(fig_top_zones, width='stretch', config={"displayModeBar": False})
 
     with zc2:
         st.markdown("<div class='sec-title'>&#11015; Bottom 5 Zones by Exceptions</div>", unsafe_allow_html=True)
@@ -3343,7 +3527,7 @@ def render_zone_exception_drilldown(
         )
         fig_bottom_zones.update_traces(marker_color="#FF6600", textposition="outside")
         fig_bottom_zones.update_layout(height=360, margin=dict(l=10, r=10, t=10, b=10), showlegend=False)
-        st.plotly_chart(fig_bottom_zones, use_container_width=True, config={"displayModeBar": False})
+        st.plotly_chart(fig_bottom_zones, width='stretch', config={"displayModeBar": False})
 
     lc1, lc2 = st.columns(2, gap="medium")
     with lc1:
@@ -4240,7 +4424,7 @@ def render_open_delivery_details(
             sortable_df["Delivery Age (Days)"] = pd.to_numeric(
                 sortable_df["Delivery Age (Days)"], errors="coerce"
             )
-        st.dataframe(sortable_df, use_container_width=True, hide_index=True)
+        st.dataframe(sortable_df, width='stretch', hide_index=True)
 
     st.markdown("---")
     dl_col, _ = st.columns([1, 4])
@@ -4777,7 +4961,7 @@ def render_tank_reco_details(
     )
     sortable_df = detail_df[detail_cols].copy() if detail_cols else detail_df.copy()
     if not sortable_df.empty:
-        st.dataframe(sortable_df, use_container_width=True, hide_index=True)
+        _render_html_table(sortable_df, max_height=420)
 
     unmatched = tank_reco_result.get("unmatched", [])
     if unmatched:
