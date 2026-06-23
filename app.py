@@ -461,7 +461,8 @@ def inject_css() -> None:
         visibility: visible !important;
     }}
     [data-testid="stSidebarCollapsedControl"] {{
-        display: none !important;
+        display: block !important;
+        visibility: visible !important;
     }}
     [data-testid="stAppViewContainer"] > .main,
     [data-testid="stAppViewContainer"] > .main > div,
