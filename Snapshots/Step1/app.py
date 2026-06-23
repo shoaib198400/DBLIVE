@@ -751,7 +751,7 @@ def kpi_card(
     </div>
     """, unsafe_allow_html=True)
     return st.button("📋 View Details →", key=key or f"btn_{label}",
-                     use_container_width=True)
+                     width='stretch')
 
 
 def export_to_excel(df_dict: dict) -> bytes:
@@ -869,7 +869,7 @@ def render_sidebar(df_plant: pd.DataFrame) -> tuple:
         uploaded_dc = st.file_uploader(
             "Pending DC File  (.xls / .xlsx)",
             type = ["xls", "xlsx"],
-            key  = "uploader_pending_dc",
+            key  = "uploader_pending_dc_step1_sidebar",
         )
 
         st.markdown("<hr/>", unsafe_allow_html=True)
@@ -885,7 +885,7 @@ def render_sidebar(df_plant: pd.DataFrame) -> tuple:
         """, unsafe_allow_html=True)
 
         st.markdown("<hr/>", unsafe_allow_html=True)
-        if st.button("&#128260; Refresh Data", use_container_width=True,
+        if st.button("&#128260; Refresh Data", width='stretch',
                      key="btn_refresh"):
             st.cache_data.clear()
             st.rerun()
@@ -1083,7 +1083,7 @@ def _render_zone_bar(zone_summary: pd.DataFrame) -> None:
                 zeroline=False,
             ),
         )
-        st.plotly_chart(fig_bar, use_container_width=True, config={"displayModeBar": False})
+        st.plotly_chart(fig_bar, width='stretch', config={"displayModeBar": False})
 
     with pie_col:
         pie_df = chart_df.copy()
@@ -1139,7 +1139,7 @@ def _render_zone_bar(zone_summary: pd.DataFrame) -> None:
                 )
             ],
         )
-        st.plotly_chart(fig_pie, use_container_width=True, config={"displayModeBar": False})
+        st.plotly_chart(fig_pie, width='stretch', config={"displayModeBar": False})
 
 
 # ─────────────────────────────────────────────────────────────────────────────

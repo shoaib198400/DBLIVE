@@ -1,4 +1,6 @@
 import base64
+import hashlib
+import inspect
 import pandas as pd
 import html
 import os
@@ -9,121 +11,240 @@ import streamlit as st
 import warnings
 warnings.filterwarnings("ignore", category=UserWarning, module="openpyxl")
 
-# --- LOCATION VISIT DATA LOADING & MAPPING ---
-try:
-    df_loc = pd.read_excel("Reports/LOCATION_VISIT.xls")
-except Exception:
-    df_loc = pd.DataFrame()
-
-zone_mapping = {
-    "NCZ": "North Central Zone (NCZ)",
-    "NWF": "North West Frontier Zone (NWFZ)",
-    "NZ": "North Zone (NZ)",
-    "SZ": "South Zone (SZ)",
-    "SWZ": "South West Zone (SWZ)",
-    "WZ": "West Zone (WZ)",
-    "ECZ": "East Central Zone (ECZ)",
-    "SCZ": "South Central Zone (SCZ)",
-    "EZ": "East Zone (EZ)",
-    "NWZ": "North West Zone (NWZ)",
-    "CNT": "Central Zone (CZ)",
-    "NFZ": "North Frontier Zone (NFZ)"
-}
-reverse_zone_mapping = {v: k for k, v in zone_mapping.items()}
-
 def render_location_visit_details(df):
+    st.markdown("<div class='sec-title'>&#128205; Location Visit - %Compliance &#8212; Drill Down</div>", unsafe_allow_html=True)
+
+    back_col, _ = st.columns([1, 7])
+    with back_col:
+        if st.button("&#11013; Back to Dashboard", key="btn_back_location_visit"):
+            st.session_state["location_visit_page"] = "main"
+            st.session_state["selected_tile"] = None
+            st.session_state["dummy_tank_clicked"] = False
+            st.session_state["pl_unblock_clicked"] = False
+            st.session_state["tank_turns_page"] = "main"
+            st.rerun()
+
     if df is None or df.empty:
-        st.warning("No data available")
+        st.warning("No data available after applying filters.")
         return
-    import pandas as pd
-    import numpy as np
-    # Load PlantMaster for SBU Zone mapping
-    try:
-        plant_master = pd.read_excel(PLANT_MASTER_PATH, engine="openpyxl")
-    except Exception:
-        plant_master = pd.DataFrame()
-    zone_map = {}
-    if not plant_master.empty and "Plant Code" in plant_master.columns and "Zone Name" in plant_master.columns:
-        zone_map = dict(zip(plant_master["Plant Code"], plant_master["Zone Name"]))
 
-    df_work = df.copy()
-    # Convert columns to numeric, treat non-numeric as 0
-    for col in ["TotalRecomms", "OpenRecomms", "ClosedRecomms"]:
-        if col in df_work.columns:
-            df_work[col] = pd.to_numeric(df_work[col], errors="coerce").fillna(0)
+    def _to_num(series: pd.Series) -> pd.Series:
+        return pd.to_numeric(series, errors="coerce").fillna(0)
 
-    # Map SBU Zone from PlantMaster if not present
-    if "SBU Zone" not in df_work.columns and "Planning Plant" in df_work.columns:
-        df_work["SBU Zone"] = df_work["Planning Plant"].map(zone_map)
+    def _group_compliance(frame: pd.DataFrame, group_cols: list[str]) -> pd.DataFrame:
+        work = frame.copy()
+        work["_total_num"] = _to_num(work["TotalRecomms"])
+        work["_closed_num"] = _to_num(work["ClosedRecomms"])
+        work["_open_num"] = _to_num(work["OpenRecomms"])
+        grouped = (
+            work.groupby(group_cols, dropna=False, as_index=False)
+            .agg(
+                Total_Recomms=("_total_num", "sum"),
+                Closed_Recomms=("_closed_num", "sum"),
+                Open_Recomms=("_open_num", "sum"),
+            )
+        )
+        grouped["Compliance Value"] = (
+            grouped["Closed_Recomms"] / grouped["Total_Recomms"].replace(0, pd.NA)
+        ).fillna(0) * 100
+        return grouped
 
-    # Deduplicate: for each Planning Plant + Audit Number, keep row with highest TotalRecomms
-    if "Planning Plant" in df_work.columns and "Audit Number" in df_work.columns:
-        df_work = df_work.sort_values("TotalRecomms", ascending=False)
-        df_work = df_work.drop_duplicates(subset=["Planning Plant", "Audit Number"], keep="first")
-
-    # Robustly format dates: try common formats, fallback to dateutil
-    for col in ["Audit Start Date", "Audit End Date"]:
-        if col in df_work.columns:
-            # Try common formats first
-            parsed = None
-            for fmt in ("%d/%m/%Y", "%Y-%m-%d", "%d-%m-%Y", "%m/%d/%Y"):
-                try:
-                    parsed = pd.to_datetime(df_work[col], format=fmt, errors='raise')
-                    break
-                except Exception:
-                    continue
-            if parsed is None:
-                # Fallback to dateutil
-                parsed = pd.to_datetime(df_work[col], errors='coerce')
-            df_work[col] = parsed.dt.strftime("%d/%m/%Y")
-
-    # Pivot: group by Planning Plant and show required fields, sum the three columns
-    group_cols = [col for col in ["SBU Zone", "Planning Plant", "Plant Desc.", "Audit Number", "Audit Start Date", "Audit End Date", "Audit Status"] if col in df_work.columns]
-    agg_dict = {"TotalRecomms": "sum", "OpenRecomms": "sum", "ClosedRecomms": "sum"}
-    df_pivot = df_work.groupby(group_cols, dropna=False).agg(agg_dict).reset_index()
-
-    display_cols = [
-        "SBU Zone", "Planning Plant", "Plant Desc.", "Audit Number",
-        "Audit Start Date", "Audit End Date", "Audit Status",
-        "TotalRecomms", "OpenRecomms", "ClosedRecomms"
+    required_cols = [
+        "Zone", "Planning Plant", "Plant Desc.", "Audit Number",
+        "Audit Start Date", "Audit End Date", "TotalRecomms", "ClosedRecomms", "OpenRecomms",
     ]
-    col_labels = {
-        "SBU Zone": "Zone",
-        "Planning Plant": "Plant Code",
-        "Plant Desc.": "Plant Description",
-        "Audit Number": "Audit Number",
-        "Audit Start Date": "Audit Start Date",
-        "Audit End Date": "Audit End Date",
-        "Audit Status": "Audit Status",
-        "TotalRecomms": "Total Recomm.",
-        "OpenRecomms": "Open Recomm.",
-        "ClosedRecomms": "Closed Recomm."
-    }
-    df_display = df_pivot[[c for c in display_cols if c in df_pivot.columns]].copy()
-    st.subheader("Location Visit Details")
-    _render_html_table(df_display, col_labels=col_labels, max_height=420)
-    # Download as Excel
-    to_download = df_display.copy()
-    try:
-        import io
-        output = io.BytesIO()
-        with pd.ExcelWriter(output, engine="openpyxl") as writer:
-            to_download.to_excel(writer, index=False, sheet_name="LocationVisit")
-        data = output.getvalue()
-        st.download_button(
-            label="Download Data (Excel)",
-            data=data,
-            file_name="location_visit_details.xlsx",
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    missing_cols = [c for c in required_cols if c not in df.columns]
+    if missing_cols:
+        st.warning("Missing required column(s): " + ", ".join(missing_cols))
+        return
+
+    df_source = df.copy()
+    df_view = df.copy()
+
+    st.markdown("<div class='sec-title'>&#128269; Drill-Down Filters</div>", unsafe_allow_html=True)
+    f1, f2 = st.columns(2)
+
+    zone_opts = ["All"] + sorted(df_view["Zone"].fillna("").astype(str).str.strip().replace("", pd.NA).dropna().unique().tolist())
+    plant_desc_opts = ["All"] + sorted(df_view["Plant Desc."].fillna("").astype(str).str.strip().replace("", pd.NA).dropna().unique().tolist())
+
+    sel_zone = f1.selectbox("Zone", zone_opts, key="lv_filter_zone")
+    sel_plant_desc = f2.selectbox("Plant Desc.", plant_desc_opts, key="lv_filter_plant_desc")
+
+    if sel_zone != "All":
+        df_view = df_view[df_view["Zone"].astype(str) == sel_zone]
+    if sel_plant_desc != "All":
+        df_view = df_view[df_view["Plant Desc."].astype(str) == sel_plant_desc]
+
+    if df_view.empty:
+        st.info("No data available after applying drill-down filters.")
+        return
+
+    total_recomms = _to_num(df_view["TotalRecomms"]).sum()
+    total_closed = _to_num(df_view["ClosedRecomms"]).sum()
+    compliance = (total_closed / total_recomms) if total_recomms > 0 else 0.0
+
+    m1, m2 = st.columns(2)
+    m1.metric("Location Visit Count", f"{df_view['Planning Plant'].nunique():,}")
+    m2.metric("Compliance (%)", f"{compliance * 100:.1f}%")
+
+    st.markdown("<div class='sec-title'>&#128203; Location Visit Details (Pivot)</div>", unsafe_allow_html=True)
+
+    pivot_work = df_view.copy()
+    pivot_work["_total_num"] = _to_num(pivot_work["TotalRecomms"])
+    pivot_work["_closed_num"] = _to_num(pivot_work["ClosedRecomms"])
+    pivot_work["_open_num"] = _to_num(pivot_work["OpenRecomms"])
+    pivot_df = (
+        pivot_work.groupby(
+            ["Planning Plant", "Audit Number", "Audit Start Date", "Audit End Date"],
+            as_index=False,
+            dropna=False,
         )
-    except Exception:
-        csv = df_display.to_csv(index=False).encode('utf-8')
-        st.download_button(
-            label="Download Data (CSV)",
-            data=csv,
-            file_name="location_visit_details.csv",
-            mime="text/csv"
-        )
+        .agg({
+            "_total_num": "sum",
+            "_closed_num": "sum",
+            "_open_num": "sum",
+        })
+        .reset_index(drop=True)
+    )
+
+    pivot_df["Compliance (%)"] = (
+        pivot_df["_closed_num"] / pivot_df["_total_num"].replace(0, pd.NA)
+    ).fillna(0) * 100
+
+    pivot_df = pivot_df.rename(columns={
+        "_total_num": "Total Recomms",
+        "_closed_num": "Closed Recomms",
+        "_open_num": "Open Recomms",
+    })
+
+    pivot_display = pivot_df.copy()
+    pivot_display["Compliance (%)"] = pivot_display["Compliance (%)"].map(lambda x: f"{x:.2f}%")
+    _render_html_table(pivot_display, max_height=500)
+
+    _download_excel_button(
+        label="&#11015;  Download Location Visit Raw Data  (.xlsx)",
+        file_prefix="location_visit",
+        sheets={"Location_Visit_Raw": df_view.reset_index(drop=True)},
+        key="dl_location_visit",
+    )
+
+    location_compliance = _group_compliance(df_view, ["Planning Plant", "Plant Desc."])
+    location_compliance["Location Label"] = (
+        location_compliance["Planning Plant"].astype(str).str.strip()
+        + " - "
+        + location_compliance["Plant Desc."].astype(str).str.strip()
+    )
+    zone_compliance = _group_compliance(df_view, ["Zone"])
+
+    top5_locations = location_compliance.sort_values(
+        ["Compliance Value", "Closed_Recomms", "Total_Recomms"],
+        ascending=[False, False, False],
+    ).head(5).reset_index(drop=True)
+    bottom5_locations = location_compliance.sort_values(
+        ["Compliance Value", "Total_Recomms", "Planning Plant"],
+        ascending=[True, False, True],
+    ).head(5).reset_index(drop=True)
+    top5_zones = zone_compliance.sort_values(
+        ["Compliance Value", "Closed_Recomms", "Total_Recomms"],
+        ascending=[False, False, False],
+    ).head(5).reset_index(drop=True)
+    bottom5_zones = zone_compliance.sort_values(
+        ["Compliance Value", "Total_Recomms", "Zone"],
+        ascending=[True, False, True],
+    ).head(5).reset_index(drop=True)
+
+    st.markdown("<div class='sec-title'>&#128202; Top / Bottom 5 Compliance Analysis</div>", unsafe_allow_html=True)
+
+    def _format_compliance_table(frame: pd.DataFrame, label_cols: list[str]) -> pd.DataFrame:
+        display = frame[label_cols + ["Compliance Value", "Total_Recomms", "Closed_Recomms"]].copy()
+        display = display.rename(columns={
+            "Compliance Value": "Compliance (%)",
+            "Total_Recomms": "Total Recomms",
+            "Closed_Recomms": "Closed Recomms",
+        })
+        display["Compliance (%)"] = display["Compliance (%)"].map(lambda x: f"{x:.2f}%")
+        display["Total Recomms"] = display["Total Recomms"].map(lambda x: f"{x:,}")
+        display["Closed Recomms"] = display["Closed Recomms"].map(lambda x: f"{x:,}")
+        return display
+
+    def _render_compliance_charts(frame: pd.DataFrame, label_col: str, title_prefix: str, colors: list[str]) -> None:
+        if frame.empty:
+            st.info("No analysis available.")
+            return
+        chart_col1, chart_col2 = st.columns(2)
+        with chart_col1:
+            pie_fig = px.pie(
+                frame,
+                names=label_col,
+                values="Compliance Value",
+                hole=0.62,
+                color_discrete_sequence=colors,
+                title=f"{title_prefix} Compliance Share",
+            )
+            pie_fig.update_traces(textposition="inside", textinfo="percent+label")
+            pie_fig.update_layout(margin=dict(l=20, r=20, t=60, b=20), height=420)
+            st.plotly_chart(pie_fig, use_container_width=True)
+        with chart_col2:
+            bar_fig = px.bar(
+                frame,
+                x="Compliance Value",
+                y=label_col,
+                orientation="h",
+                color="Compliance Value",
+                color_continuous_scale=colors,
+                title=f"{title_prefix} Compliance (%)",
+            )
+            bar_fig.update_layout(margin=dict(l=20, r=20, t=60, b=20), height=420, coloraxis_showscale=False)
+            bar_fig.update_xaxes(title_text="Compliance (%)", ticksuffix="%")
+            bar_fig.update_yaxes(title_text="")
+            st.plotly_chart(bar_fig, use_container_width=True)
+
+    st.markdown("<div class='sec-title'>&#11014; Top 5 Locations by Compliance</div>", unsafe_allow_html=True)
+    _render_html_table(_format_compliance_table(top5_locations, ["Planning Plant", "Plant Desc."]), max_height=260)
+    _render_compliance_charts(top5_locations, "Location Label", "Top 5 Locations", px.colors.sequential.Blues)
+
+    st.markdown("<div class='sec-title'>&#11015; Bottom 5 Locations by Compliance</div>", unsafe_allow_html=True)
+    _render_html_table(_format_compliance_table(bottom5_locations, ["Planning Plant", "Plant Desc."]), max_height=260)
+    _render_compliance_charts(bottom5_locations, "Location Label", "Bottom 5 Locations", px.colors.sequential.Reds)
+
+    st.markdown("<div class='sec-title'>&#11014; Top 5 Zones by Compliance</div>", unsafe_allow_html=True)
+    _render_html_table(_format_compliance_table(top5_zones, ["Zone"]), max_height=260)
+    _render_compliance_charts(top5_zones, "Zone", "Top 5 Zones", px.colors.sequential.Greens)
+
+    st.markdown("<div class='sec-title'>&#11015; Bottom 5 Zones by Compliance</div>", unsafe_allow_html=True)
+    _render_html_table(_format_compliance_table(bottom5_zones, ["Zone"]), max_height=260)
+    _render_compliance_charts(bottom5_zones, "Zone", "Bottom 5 Zones", px.colors.sequential.OrRd)
+
+    plant_master_scope = load_plant_master()[["Plant Code", "Plant Name", "Zone Name"]].copy()
+    plant_master_scope["Plant Code"] = (
+        plant_master_scope["Plant Code"].astype(str).str.strip().str.replace(r"\.0$", "", regex=True)
+    )
+
+    missing_scope = df_source.copy()
+    if sel_zone != "All":
+        missing_scope = missing_scope[missing_scope["Zone"].astype(str) == sel_zone]
+        plant_master_scope = plant_master_scope[plant_master_scope["Zone Name"].astype(str) == sel_zone]
+
+    source_codes = set(
+        missing_scope["Planning Plant"].astype(str).str.strip().str.replace(r"\.0$", "", regex=True).unique().tolist()
+    )
+    missing_locations = (
+        plant_master_scope[~plant_master_scope["Plant Code"].isin(source_codes)]
+        .rename(columns={
+            "Zone Name": "Zone",
+            "Plant Code": "Planning Plant",
+            "Plant Name": "Location",
+        })
+        [["Zone", "Planning Plant", "Location"]]
+        .sort_values(["Zone", "Planning Plant"])
+        .reset_index(drop=True)
+    )
+
+    st.markdown("<div class='sec-title'>&#9888; Missing Zones/Locations</div>", unsafe_allow_html=True)
+    if missing_locations.empty:
+        st.success("All PlantMaster zones/locations in the current scope are present in the Location Visit source file.")
+    else:
+        _render_html_table(missing_locations, max_height=320)
 
 import base64
 import pandas as pd
@@ -162,7 +283,18 @@ PEND_INV_PATH       = os.path.join(REPORTS_DIR, "PENDING_INVOICES_SOD.xls")
 SHORT_SALES_PATH    = os.path.join(REPORTS_DIR, "SOD_OPEN_SHORTAGES_SALES.xls")
 SHORT_STO_PATH      = os.path.join(REPORTS_DIR, "SOD_OPEN_SHORTAGES_STO.xls")
 TANK_RECO_PATH      = os.path.join(REPORTS_DIR, "TANK_RECO_REPORT.xls")
-
+LOCAL_LOCATION_VISIT_PATH = os.path.join(REPORTS_DIR, "LOCATION_VISIT.xls")
+EXTERNAL_LOCATION_VISIT_PATH = r"D:\SHOAIB\VS CODE PROJECTS\EXCEPTION SNAPSHOT DASHBOARD\Reports\LOCATION_VISIT.xls"
+LOCATION_VISIT_PATH = (
+    LOCAL_LOCATION_VISIT_PATH
+    if os.path.exists(LOCAL_LOCATION_VISIT_PATH)
+    else EXTERNAL_LOCATION_VISIT_PATH
+    if os.path.exists(EXTERNAL_LOCATION_VISIT_PATH)
+    else LOCAL_LOCATION_VISIT_PATH
+)
+DUMMY_TANK_PATH     = os.path.join(REPORTS_DIR, "DUMMY TANK STOCK.xls")
+PIPELINE_STOCK_PATH = os.path.join(REPORTS_DIR, "PIPELINE STOCK.xls")       
+TANK_TURNS_PATH     = os.path.join(REPORTS_DIR, "Tank Turn.xlsx")
 # HPCL Corporate Color Palette
 C = {
     "primary"    : "#003087",
@@ -695,6 +827,16 @@ def inject_css() -> None:
     [data-testid="stMetricDelta"] {{
         font-size: 15px !important;
     }}
+
+    /* ── Larger fonts for Streamlit dataframe tables used in drill-down pages ── */
+    [data-testid="stDataFrame"] th {{
+        font-size: 18px !important;
+        font-weight: 700 !important;
+    }}
+    [data-testid="stDataFrame"] td {{
+        font-size: 17px !important;
+        font-weight: 600 !important;
+    }}
     </style>
     """, unsafe_allow_html=True)
 
@@ -710,12 +852,58 @@ def load_plant_master() -> pd.DataFrame:
     Only returns rows where Active == 'Yes'.
     Optimized: Only load required columns.
     """
-    usecols = ["Plant Code", "Plant Name", "Zone Name", "Active"]
-    df = pd.read_excel(PLANT_MASTER_PATH, dtype={"Plant Code": str}, engine="openpyxl", usecols=usecols)
-    df.columns = df.columns.str.strip()
-    df["Plant Code"] = df["Plant Code"].astype(str).str.strip()
+    df = pd.read_excel(PLANT_MASTER_PATH, dtype={"Plant Code": str}, engine="openpyxl")
+    df.columns = df.columns.astype(str).str.replace("\n", " ", regex=False).str.strip()
+
+    normalized = {
+        " ".join(col.lower().split()): col
+        for col in df.columns
+    }
+
+    zone_aliases = [
+        "zone name",
+        "new name of zone as per cfd minutes",
+        "new name of zone",
+        "zone",
+    ]
+    zone_col = next((normalized[key] for key in zone_aliases if key in normalized), None)
+
+    required_cols = {
+        "plant code": "Plant Code",
+        "plant name": "Plant Name",
+    }
+    rename_map = {}
+    missing_required = []
+    for key, target in required_cols.items():
+        source = normalized.get(key)
+        if source is None:
+            missing_required.append(target)
+        else:
+            rename_map[source] = target
+
+    if zone_col is None:
+        missing_required.append("Zone Name")
+    else:
+        rename_map[zone_col] = "Zone Name"
+
+    if missing_required:
+        raise ValueError(
+            "PlantMaster missing required column(s): " + ", ".join(missing_required)
+        )
+
+    if "active" in normalized:
+        rename_map[normalized["active"]] = "Active"
+
+    df = df.rename(columns=rename_map)
+    keep_cols = ["Plant Code", "Plant Name", "Zone Name"] + (["Active"] if "Active" in df.columns else [])
+    df = df[keep_cols].copy()
+
+    df["Plant Code"] = df["Plant Code"].astype(str).str.strip().str.replace(r"\.0$", "", regex=True)
     df["Plant Name"] = df["Plant Name"].astype(str).str.strip()
-    df["Zone Name"]  = df["Zone Name"].astype(str).str.strip()
+    df["Zone Name"] = df["Zone Name"].astype(str).str.strip()
+    df["Zone Name"] = df["Zone Name"].replace(r"^\s*$", pd.NA, regex=True)
+    df = df.dropna(subset=["Zone Name"])
+
     if "Active" in df.columns:
         df = df[df["Active"].astype(str).str.strip().str.lower() == "yes"]
     return df.reset_index(drop=True)
@@ -731,9 +919,19 @@ def load_zone_master() -> pd.DataFrame:
     return df.reset_index(drop=True)
 
 
+def _get_file_cache_token(path: str) -> tuple[int, int] | None:
+    """Return a lightweight file signature so Streamlit cache refreshes after file updates."""
+    try:
+        stat = os.stat(path)
+        return stat.st_mtime_ns, stat.st_size
+    except OSError:
+        return None
+
+
 @st.cache_data(show_spinner=False)
-def _load_excel_from_path(path: str) -> pd.DataFrame:
+def _load_excel_from_path(path: str, cache_buster: tuple[int, int] | None = None) -> pd.DataFrame:
     """Internal helper: load any Excel file from a disk path (cached)."""
+    del cache_buster  # used only to invalidate Streamlit cache when file changes
     ext = os.path.splitext(path)[1].lower()
     df = _read_excel_flexible(path, ext_hint=ext)
     df.columns = df.columns.str.strip().str.upper()
@@ -782,7 +980,7 @@ def load_pending_dc(source) -> pd.DataFrame:
     """
     try:
         if isinstance(source, str):
-            return _load_excel_from_path(source)
+            return _load_excel_from_path(source, cache_buster=_get_file_cache_token(source))
         name   = getattr(source, "name", "file.xlsx")
         ext    = os.path.splitext(name)[1].lower()
         df = _read_excel_flexible(source, ext_hint=ext)
@@ -802,7 +1000,7 @@ def load_open_delivery(source) -> pd.DataFrame:
     """
     try:
         if isinstance(source, str):
-            return _load_excel_from_path(source)
+            return _load_excel_from_path(source, cache_buster=_get_file_cache_token(source))
         name   = getattr(source, "name", "file.xlsx")
         ext    = os.path.splitext(name)[1].lower()
         df = _read_excel_flexible(source, ext_hint=ext)
@@ -822,7 +1020,7 @@ def load_open_intransit(source) -> pd.DataFrame:
     """
     try:
         if isinstance(source, str):
-            return _load_excel_from_path(source)
+            return _load_excel_from_path(source, cache_buster=_get_file_cache_token(source))
         name   = getattr(source, "name", "file.xlsx")
         ext    = os.path.splitext(name)[1].lower()
         df = _read_excel_flexible(source, ext_hint=ext)
@@ -842,7 +1040,7 @@ def load_open_sales_orders(source) -> pd.DataFrame:
     """
     try:
         if isinstance(source, str):
-            return _load_excel_from_path(source)
+            return _load_excel_from_path(source, cache_buster=_get_file_cache_token(source))
         name   = getattr(source, "name", "file.xlsx")
         ext    = os.path.splitext(name)[1].lower()
         df = _read_excel_flexible(source, ext_hint=ext)
@@ -862,7 +1060,7 @@ def load_pending_invoices(source) -> pd.DataFrame:
     """
     try:
         if isinstance(source, str):
-            return _load_excel_from_path(source)
+            return _load_excel_from_path(source, cache_buster=_get_file_cache_token(source))
         name   = getattr(source, "name", "file.xlsx")
         ext    = os.path.splitext(name)[1].lower()
         df = _read_excel_flexible(source, ext_hint=ext)
@@ -882,7 +1080,7 @@ def load_tank_reco(source) -> pd.DataFrame:
     """
     try:
         if isinstance(source, str):
-            return _load_excel_from_path(source)
+            return _load_excel_from_path(source, cache_buster=_get_file_cache_token(source))
         name   = getattr(source, "name", "file.xlsx")
         ext    = os.path.splitext(name)[1].lower()
         df = _read_excel_flexible(source, ext_hint=ext)
@@ -902,7 +1100,7 @@ def load_open_shortages_sales(source) -> pd.DataFrame:
     """
     try:
         if isinstance(source, str):
-            return _load_excel_from_path(source)
+            return _load_excel_from_path(source, cache_buster=_get_file_cache_token(source))
         name   = getattr(source, "name", "file.xlsx")
         ext    = os.path.splitext(name)[1].lower()
         df = _read_excel_flexible(source, ext_hint=ext)
@@ -922,7 +1120,7 @@ def load_open_shortages_sto(source) -> pd.DataFrame:
     """
     try:
         if isinstance(source, str):
-            return _load_excel_from_path(source)
+            return _load_excel_from_path(source, cache_buster=_get_file_cache_token(source))
         name   = getattr(source, "name", "file.xlsx")
         ext    = os.path.splitext(name)[1].lower()
         df = _read_excel_flexible(source, ext_hint=ext)
@@ -933,7 +1131,279 @@ def load_open_shortages_sto(source) -> pd.DataFrame:
         return pd.DataFrame()
 
 
-# ─────────────────────────────────────────────────────────────────────────────
+@st.cache_data(show_spinner=False)
+def load_dummy_tank_stock(path: str, cache_buster: tuple[int, int] | None = None) -> pd.DataFrame:
+    """Load Dummy Tank Stock report from disk and normalize critical columns."""
+    try:
+        del cache_buster  # used only to invalidate Streamlit cache when file changes
+        ext = os.path.splitext(path)[1].lower()
+        df = _read_excel_flexible(path, ext_hint=ext)
+        df.columns = df.columns.astype(str).str.strip()
+
+        # Normalize known report headers that can vary by case/spelling.
+        canonical_cols = {
+            "plant": "Plant",
+            "material": "Material",
+            "storage location": "Storage Location",
+            "base unit of measure": "Base Unit of Measure",
+            "unrestricted": "Unrestricted",
+            "zone": "Zone",
+        }
+        rename_map = {}
+        for col in df.columns:
+            key = " ".join(str(col).strip().lower().split())
+            if key in canonical_cols:
+                rename_map[col] = canonical_cols[key]
+        if rename_map:
+            df = df.rename(columns=rename_map)
+
+        text_cols = ["Plant", "Material", "Storage Location", "Base Unit of Measure", "Zone"]
+        for col in text_cols:
+            if col in df.columns:
+                df[col] = df[col].fillna("").astype(str).str.strip()
+
+        if "Unrestricted" in df.columns:
+            df["Unrestricted"] = pd.to_numeric(df["Unrestricted"], errors="coerce").fillna(0)
+
+        return df
+    except Exception:
+        return pd.DataFrame()
+
+
+@st.cache_data(show_spinner=False)
+def load_tank_turns(path: str, cache_buster: tuple[int, int] | None = None) -> pd.DataFrame:
+    """Load Tank Turn report from disk and normalize critical columns."""
+    try:
+        del cache_buster  # used only to invalidate Streamlit cache when file changes
+        ext = os.path.splitext(path)[1].lower()
+        df = _read_excel_flexible(path, ext_hint=ext)
+        df.columns = df.columns.astype(str).str.strip()
+
+        canonical_cols = {
+            "zone": "Zone",
+            "plant": "Plant",
+            "plant name": "Plant Name",
+            "tank": "Tank",
+            "unique ref id": "Unique Ref Id",
+            "material": "Material",
+            "material description": "Material Description",
+            "tank capacity": "Tank Capacity",
+            "dispatches": "Dispatches",
+            "turn": "Turn",
+            "tank type": "Tank Type",
+            "tank status": "Tank Status",
+            "opening stock": "Opening Stock",
+            "receipts": "Receipts",
+            "closing stock": "Closing Stock",
+        }
+        rename_map = {}
+        for col in df.columns:
+            key = " ".join(str(col).strip().lower().split())
+            if key in canonical_cols:
+                rename_map[col] = canonical_cols[key]
+        if rename_map:
+            df = df.rename(columns=rename_map)
+
+        text_cols = ["Zone", "Plant", "Plant Name", "Tank", "Unique Ref Id",
+                     "Material", "Material Description", "Tank Type", "Tank Status"]
+        for col in text_cols:
+            if col in df.columns:
+                df[col] = df[col].fillna("").astype(str).str.strip()
+
+        for num_col in ["Tank Capacity", "Dispatches", "Turn",
+                        "Opening Stock", "Receipts", "Closing Stock"]:
+            if num_col in df.columns:
+                df[num_col] = pd.to_numeric(df[num_col], errors="coerce").fillna(0)
+
+        return df
+    except Exception:
+        return pd.DataFrame()
+
+
+@st.cache_data(show_spinner=False)
+def load_location_visit(path: str, cache_buster: tuple[int, int] | None = None) -> pd.DataFrame:
+    """Load Location Visit report from disk and normalize critical columns.
+
+    The revised workbook may place the usable data on a different sheet and may
+    also rename headers slightly. This loader scans a few sheet/header
+    combinations and standardizes the expected business columns.
+    """
+    try:
+        del cache_buster  # used only to invalidate Streamlit cache when file changes
+
+        import re
+
+        def _norm_header(value: object) -> str:
+            return re.sub(r"[^a-z0-9]+", "", str(value).strip().lower())
+
+        alias_groups = {
+            "Zone": ["zone", "zone name"],
+            "Planning Plant": [
+                "planning plant", "planningplant", "planning plant code",
+                "planningplantcode", "plant code", "plant"
+            ],
+            "Plant Desc.": [
+                "plant desc.", "plant desc", "plant description",
+                "plant name", "location", "location name"
+            ],
+            "Audit Number": ["audit number", "audit no", "audit no.", "auditnumber", "audit id"],
+            "Audit Start Date": ["audit start date", "audit start", "auditstartdate", "visit start date"],
+            "Audit End Date": ["audit end date", "audit end", "auditenddate", "visit end date"],
+            "TotalRecomms": ["totalrecomms", "total recomms", "total recommendations", "total recommendation"],
+            "ClosedRecomms": ["closedrecomms", "closed recomms", "closed recommendations", "closed recommendation"],
+            "OpenRecomms": ["openrecomms", "open recomms", "open recommendations", "open recommendation"],
+        }
+        alias_map = {
+            _norm_header(alias): canonical
+            for canonical, aliases in alias_groups.items()
+            for alias in aliases
+        }
+
+        def _standardize_candidate(frame: pd.DataFrame) -> tuple[pd.DataFrame, set[str]]:
+            candidate = frame.copy()
+            candidate.columns = candidate.columns.astype(str).str.strip()
+            rename_map: dict[str, str] = {}
+            matched: set[str] = set()
+            for col in candidate.columns:
+                canonical = alias_map.get(_norm_header(col))
+                if canonical and canonical not in matched:
+                    rename_map[col] = canonical
+                    matched.add(canonical)
+            if rename_map:
+                candidate = candidate.rename(columns=rename_map)
+            return candidate, matched
+
+        best_df = pd.DataFrame()
+        best_match_count = -1
+
+        try:
+            workbook = pd.ExcelFile(path)
+            candidate_sheets = workbook.sheet_names or [0]
+        except Exception:
+            candidate_sheets = [0]
+
+        for sheet in candidate_sheets:
+            for header_row in range(0, 4):
+                try:
+                    raw_df = pd.read_excel(path, sheet_name=sheet, header=header_row)
+                except Exception:
+                    continue
+                if raw_df is None or raw_df.empty:
+                    continue
+                raw_df = raw_df.dropna(how="all").copy()
+                if raw_df.empty:
+                    continue
+
+                candidate_df, matched = _standardize_candidate(raw_df)
+                match_count = len(matched)
+                if match_count > best_match_count:
+                    best_df = candidate_df
+                    best_match_count = match_count
+
+                if match_count >= 6:
+                    break
+            if best_match_count >= 6:
+                break
+
+        if best_df.empty:
+            ext = os.path.splitext(path)[1].lower()
+            best_df = _read_excel_flexible(path, ext_hint=ext)
+            if best_df is None or best_df.empty:
+                return pd.DataFrame()
+            best_df.columns = best_df.columns.astype(str).str.strip()
+            best_df, _ = _standardize_candidate(best_df)
+
+        df = best_df.copy()
+
+        # ── Detect raw CAPA format and aggregate into one row per plant+audit ──
+        # Raw format: one row per recommendation, has "CAPA Status" column.
+        # Pre-aggregated format: one row per audit with numeric TotalRecomms etc.
+        # This mirrors the Sr. Manager Inspection Dashboard's isRaw / aggregateFromCAPARows logic.
+        _capa_col = next(
+            (c for c in df.columns if c.strip() in ("CAPA Status", "Capa Status")), None
+        )
+        if _capa_col is not None:
+            _CLOSED = {"Closed", "Completed"}
+            _OPEN   = {"Open", "Reopened"}
+            _gkeys  = [c for c in ["Planning Plant", "Plant Desc.", "Zone",
+                                   "Audit Number", "Audit Start Date", "Audit End Date"]
+                       if c in df.columns]
+            if _gkeys:
+                _records = []
+                for _vals, _grp in df.groupby(_gkeys, dropna=False):
+                    _statuses = _grp[_capa_col].astype(str).str.strip()
+                    # exclude blank and NaN CAPA Status rows (NaN becomes "nan" after astype str)
+                    _valid    = _statuses[(_statuses != "") & (_statuses.str.lower() != "nan")]
+                    if len(_valid) == 0:
+                        continue
+                    _row = dict(zip(_gkeys, _vals if isinstance(_vals, tuple) else [_vals]))
+                    _row["TotalRecomms"]  = len(_valid)
+                    _row["ClosedRecomms"] = int(_valid.isin(_CLOSED).sum())
+                    _row["OpenRecomms"]   = int(_valid.isin(_OPEN).sum())
+                    _records.append(_row)
+                df = pd.DataFrame(_records)
+
+        for col in ["Planning Plant", "Plant Desc.", "Audit Number", "Zone"]:
+            if col in df.columns:
+                df[col] = df[col].fillna("").astype(str).str.strip()
+                if col == "Planning Plant":
+                    df[col] = df[col].str.replace(r"\.0$", "", regex=True)
+
+        for col in ["TotalRecomms", "ClosedRecomms", "OpenRecomms"]:
+            if col in df.columns:
+                # Convert to proper numeric; if already aggregated integers they pass through cleanly
+                df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0).astype(int)
+
+        for col in ["Audit Start Date", "Audit End Date"]:
+            if col in df.columns:
+                dt = pd.to_datetime(df[col], errors="coerce", dayfirst=True)
+                df[col] = dt.dt.strftime("%d/%m/%Y").fillna("")
+
+        return df
+    except Exception:
+        return pd.DataFrame()
+
+
+@st.cache_data(show_spinner=False)
+def load_pipeline_stock(path: str, cache_buster: tuple[int, int] | None = None) -> pd.DataFrame:
+    """Load Pipeline Stock report and normalize key columns."""
+    try:
+        del cache_buster  # used only to invalidate Streamlit cache when file changes
+        ext = os.path.splitext(path)[1].lower()
+        df = _read_excel_flexible(path, ext_hint=ext)
+        df.columns = df.columns.astype(str).str.strip()
+
+        canonical_cols = {
+            "material": "Material",
+            "plant": "Plant",
+            "storage location": "Storage location",
+            "base unit of measure": "Base Unit of Measure",
+            "unrestricted": "Unrestricted",
+            "blocked": "Blocked",
+            "zone": "Zone",
+        }
+        rename_map = {}
+        for col in df.columns:
+            key = " ".join(str(col).strip().lower().split())
+            if key in canonical_cols:
+                rename_map[col] = canonical_cols[key]
+        if rename_map:
+            df = df.rename(columns=rename_map)
+
+        text_cols = ["Material", "Plant", "Storage location", "Base Unit of Measure", "Zone"]
+        for col in text_cols:
+            if col in df.columns:
+                df[col] = df[col].fillna("").astype(str).str.strip()
+
+        for num_col in ["Unrestricted", "Blocked"]:
+            if num_col in df.columns:
+                df[num_col] = pd.to_numeric(df[num_col], errors="coerce").fillna(0)
+
+        return df
+    except Exception:
+        return pd.DataFrame()
+
+
 @st.cache_data(show_spinner=False)
 def _filter_strictly_mapped_rows(df: pd.DataFrame, source_code_col: str = "") -> tuple[pd.DataFrame, list]:
     """Keep only rows mapped to PlantMaster Zone+Plant; return filtered rows and excluded source codes."""
@@ -955,17 +1425,21 @@ def _filter_strictly_mapped_rows(df: pd.DataFrame, source_code_col: str = "") ->
         & (~zone_series.str.lower().isin(["nan", "none"]))
     )
 
-    unmatched_codes = []
+    excluded_codes = []
     if source_code_col and source_code_col in df.columns:
-        unmatched_series = df.loc[~valid_mask, source_code_col].dropna().astype(str).str.strip()
-        unmatched_series = unmatched_series[
-            (unmatched_series != "")
-            & (unmatched_series.str.lower() != "nan")
-            & (unmatched_series.str.lower() != "none")
-        ]
-        unmatched_codes = sorted(unmatched_series.unique().tolist())
+        excluded_codes = (
+            df.loc[~valid_mask, source_code_col]
+            .dropna()
+            .astype(str)
+            .str.strip()
+            .replace("", pd.NA)
+            .dropna()
+            .unique()
+            .tolist()
+        )
 
-    return df.loc[valid_mask].copy(), unmatched_codes
+    return df.loc[valid_mask].copy(), excluded_codes
+
 
 def process_pending_dc(
     df_dc        : pd.DataFrame,
@@ -976,7 +1450,7 @@ def process_pending_dc(
     """
     Process raw Pending DC data into aggregated exception metrics.
 
-    1. De-dup on (SENDING PLANT, SHIPMENT):  each unique shipment = 1 pending DC.
+    1. De-dup on (SENDING PLANT, SHIPMENT): each unique shipment = 1 pending DC.
     2. Left-join with PlantMaster to get Plant Name & Zone Name.
     3. Apply optional sidebar filters.
     4. Aggregate at plant level and zone level.
@@ -998,7 +1472,6 @@ def process_pending_dc(
         st.warning(f"⚠️ Pending DC file is missing expected columns: {missing}")
         return EMPTY
 
-    # Step 1: de-duplicate FOR COUNTING — each unique (SENDING PLANT, SHIPMENT) = 1 Pending DC
     dc_unique = df_dc.drop_duplicates(subset=["SENDING PLANT", "SHIPMENT"]).copy()
     dc_unique["SENDING PLANT"] = dc_unique["SENDING PLANT"].astype(str).str.strip()
     dc_unique["SHIPMENT"]      = dc_unique["SHIPMENT"].astype(str).str.strip()
@@ -2434,8 +2907,34 @@ def render_sidebar(df_plant: pd.DataFrame) -> tuple:
         </div>
         """, unsafe_allow_html=True)
 
+        st.markdown("<hr/>", unsafe_allow_html=True)
 
+        st.markdown('<p class="sb-nav-lbl">&#128205; Navigation Filters</p>', unsafe_allow_html=True)
 
+        all_zones = sorted(df_plant["Zone Name"].dropna().unique().tolist())
+        selected_zones = st.multiselect(
+            "Zone",
+            options=all_zones,
+            default=[],
+            placeholder="All Zones",
+        )
+
+        if selected_zones:
+            avail_plants = sorted(
+                df_plant[df_plant["Zone Name"].isin(selected_zones)]
+                ["Plant Name"].dropna().unique().tolist()
+            )
+        else:
+            avail_plants = sorted(df_plant["Plant Name"].dropna().unique().tolist())
+
+        selected_plants = st.multiselect(
+            "Plant / Location",
+            options=sorted(avail_plants),
+            default=[],
+            placeholder="All Plants",
+        )
+
+        st.markdown("<hr/>", unsafe_allow_html=True)
 
         # Use Streamlit's default sidebar collapse/expand button for robust functionality
         # No custom restore button injected
@@ -2467,12 +2966,21 @@ def render_sidebar(df_plant: pd.DataFrame) -> tuple:
             key  = unique_uploader_key,
         )
 
-    return None, None, uploaded_dc, system_info_slot
+    return selected_zones, selected_plants, uploaded_dc, system_info_slot
 
 
 # ─────────────────────────────────────────────────────────────────────────────
 # SHARED HTML TABLE RENDERER
 # ─────────────────────────────────────────────────────────────────────────────
+
+_TABLE_INSTANCE_COUNTERS = {}
+
+
+def _next_table_instance_key(base_key: str) -> str:
+    """Return a deterministic unique key per rendered table instance in a script run."""
+    next_idx = _TABLE_INSTANCE_COUNTERS.get(base_key, 0) + 1
+    _TABLE_INSTANCE_COUNTERS[base_key] = next_idx
+    return f"{base_key}_{next_idx}"
 
 def _render_html_table(df: pd.DataFrame, col_labels: dict = None, max_height: int = 500) -> None:
     """Render a DataFrame as a styled pro-table HTML element."""
@@ -2482,30 +2990,109 @@ def _render_html_table(df: pd.DataFrame, col_labels: dict = None, max_height: in
     display_df = df.copy()
     if col_labels:
         display_df = display_df.rename(columns=col_labels)
+    caller_frame = inspect.stack()[1]
+    
+    # Create a hash of the dataframe content to ensure unique keys for different data
+    df_content_hash = hashlib.md5(pd.util.hash_pandas_object(df, index=True).values.tobytes()).hexdigest()[:8]
+    
+    key_seed = "|".join(
+        [
+            str(caller_frame.function),
+            str(caller_frame.lineno),
+            df_content_hash,
+            *(str(col) for col in display_df.columns),
+        ]
+    )
+    base_table_key = f"table_view_{hashlib.md5(key_seed.encode('utf-8')).hexdigest()[:12]}"
+    table_key = base_table_key
+    is_maximized = st.session_state.get(f"{table_key}_maximized", False)
+
+    controls_col1, controls_col2 = st.columns([1.2, 6])
+    with controls_col1:
+        toggle_label = "🗗 Restore" if is_maximized else "⛶ Maximize"
+        if st.button(toggle_label, key=f"{table_key}_toggle", use_container_width=True):
+            st.session_state[f"{table_key}_maximized"] = not is_maximized
+            st.rerun()
+
     # Professional Streamlit-styled table: light bluish header, centered data
+    is_drilldown_view = (
+        st.session_state.get("page", "dashboard") != "dashboard"
+        or st.session_state.get("selected_tile") == "location_visit"
+        or st.session_state.get("location_visit_page") == "drilldown"
+        or st.session_state.get("dummy_tank_clicked") is True
+        or st.session_state.get("pl_unblock_clicked") is True
+    )
+    font_boost = 4 if is_drilldown_view else 0
+    header_font = 16 + font_boost
+    cell_font = 15 + font_boost
+    effective_height = 1100 if is_maximized else max_height
     header_bg = "#eaf2fb"  # light bluish
     header_color = "#003087"  # deep blue for text
     cell_bg_odd = "#ffffff"
     cell_bg_even = "#f7fafd"
     headers_html = "".join(
-        f"<th style='background:{header_bg};color:{header_color};font-weight:700;text-align:center;padding:10px 8px;font-size:16px;border-bottom:2px solid #d5e2f3;'>{html.escape(str(c))}</th>" for c in display_df.columns
+        f"<th style='background:{header_bg};color:{header_color};font-weight:700;text-align:center;padding:10px 8px;font-size:{header_font}px;border-bottom:2px solid #d5e2f3;'>{html.escape(str(c))}</th>" for c in display_df.columns
     )
     rows_html = "".join(
         f"<tr style='background:{cell_bg_odd if i%2==0 else cell_bg_even};'>"
         + "".join(
-            f"<td style='text-align:center;padding:8px 6px;font-size:15px;border-bottom:1px solid #e2eaf4;'>{html.escape(str(v) if pd.notna(v) else '')}</td>"
+            f"<td style='text-align:center;padding:8px 6px;font-size:{cell_font}px;border-bottom:1px solid #e2eaf4;'>{html.escape(str(v) if pd.notna(v) else '')}</td>"
             for v in row
         )
         + "</tr>"
         for i, (_, row) in enumerate(display_df.iterrows())
     )
     st.markdown(
-        f'<div class="pro-table-wrap" style="max-height:{max_height}px;overflow:auto;border-radius:8px;border:1px solid #d5e2f3;background:#fff;box-shadow:0 2px 8px #e0e0e0;">'
-        f'<table class="pro-table" style="width:100%;border-collapse:collapse;font-size:15px;">'
+        f'<div class="pro-table-wrap" style="max-height:{effective_height}px;overflow:auto;border-radius:8px;border:1px solid #d5e2f3;background:#fff;box-shadow:0 2px 8px #e0e0e0;">'
+        f'<table class="pro-table" style="width:100%;border-collapse:collapse;font-size:{cell_font}px;">'
         f'<thead><tr>{headers_html}</tr></thead>'
         f'<tbody>{rows_html}</tbody>'
         f'</table></div>',
         unsafe_allow_html=True,
+    )
+
+
+def _render_streamlit_dataframe(
+    df: pd.DataFrame,
+    max_height: int = 420,
+    hide_index: bool = True,
+    use_container_width: bool = True,
+) -> None:
+    """Render a native Streamlit dataframe with a shared maximize toggle."""
+    if df is None or df.empty:
+        st.info("No data to display.")
+        return
+
+    caller_frame = inspect.stack()[1]
+    
+    # Create a hash of the dataframe content to ensure unique keys for different data
+    df_content_hash = hashlib.md5(pd.util.hash_pandas_object(df, index=True).values.tobytes()).hexdigest()[:8]
+    
+    key_seed = "|".join(
+        [
+            str(caller_frame.function),
+            str(caller_frame.lineno),
+            df_content_hash,
+            *(str(col) for col in df.columns),
+        ]
+    )
+    base_table_key = f"stdf_view_{hashlib.md5(key_seed.encode('utf-8')).hexdigest()[:12]}"
+    table_key = base_table_key
+    is_maximized = st.session_state.get(f"{table_key}_maximized", False)
+
+    controls_col1, controls_col2 = st.columns([1.2, 6])
+    with controls_col1:
+        toggle_label = "🗗 Restore" if is_maximized else "⛶ Maximize"
+        if st.button(toggle_label, key=f"{table_key}_toggle", use_container_width=True):
+            st.session_state[f"{table_key}_maximized"] = not is_maximized
+            st.rerun()
+
+    effective_height = 1100 if is_maximized else max_height
+    st.dataframe(
+        df,
+        use_container_width=use_container_width,
+        hide_index=hide_index,
+        height=effective_height,
     )
 
 
@@ -2548,30 +3135,282 @@ def render_dashboard(
         selected_plant = st.selectbox("Select Plant / Location", ["All Plants"] + filtered_plants, key="plant_filter")
 
     # --- LOCATION VISIT KPI LOGIC (after navigation filters) ---
-    df_loc_work = df_loc.copy()
-    # Step 3: Data cleaning & transformation
-    if not df_loc_work.empty:
-        for col in ["Audit Start Date", "Audit End Date"]:
-            if col in df_loc_work.columns:
-                df_loc_work[col] = pd.to_datetime(df_loc_work[col], errors='coerce')
-        if "TotalRecomms" in df_loc_work.columns:
-            df_loc_work = df_loc_work.sort_values("TotalRecomms", ascending=False)
-        if "Planning Plant" in df_loc_work.columns:
-            df_loc_work = df_loc_work.drop_duplicates(subset=["Planning Plant"], keep="first")
+    df_loc_filtered = pd.DataFrame()
+    loc_visit_missing_columns = []
+    loc_visit_error = ""
+    kpi_location_visit = 0
+    kpi_location_compliance = 0.0
 
-    # Step 4: Apply filters
-    df_loc_filtered = df_loc_work.copy()
-    # Match dashboard filter logic
-    if selected_zone != "All Zones":
-        mapped_zone = zone_mapping.get(selected_zone, selected_zone)
-        if "SBU Zone" in df_loc_filtered.columns:
-            df_loc_filtered = df_loc_filtered[df_loc_filtered["SBU Zone"] == mapped_zone]
-    if selected_plant != "All Plants":
-        if "Planning Plant" in df_loc_filtered.columns:
-            df_loc_filtered = df_loc_filtered[df_loc_filtered["Planning Plant"] == selected_plant]
+    if os.path.exists(LOCATION_VISIT_PATH):
+        df_loc = load_location_visit(
+            LOCATION_VISIT_PATH,
+            cache_buster=_get_file_cache_token(LOCATION_VISIT_PATH),
+        )
+        required_loc_cols = [
+            "Planning Plant", "Plant Desc.", "Audit Number", "Audit Start Date", "Audit End Date",
+            "TotalRecomms", "ClosedRecomms", "OpenRecomms",
+        ]
+        loc_visit_missing_columns = [c for c in required_loc_cols if c not in df_loc.columns]
 
-    # Step 5: KPI value
-    kpi_location_visit = df_loc_filtered["Planning Plant"].nunique() if "Planning Plant" in df_loc_filtered.columns else 0
+        if loc_visit_missing_columns:
+            found_cols = ", ".join(map(str, list(df_loc.columns)[:8])) if not df_loc.empty else "no readable columns found"
+            loc_visit_error = (
+                "Location Visit file format is not recognized. Expected columns like "
+                "Planning Plant, Plant Desc., Audit Number, Audit Start Date, Audit End Date, "
+                "TotalRecomms, ClosedRecomms and OpenRecomms. "
+                f"Found: {found_cols}"
+            )
+        else:
+            df_loc_work = df_loc.copy()
+            df_loc_work["Planning Plant"] = (
+                df_loc_work["Planning Plant"].astype(str).str.strip().str.replace(r"\.0$", "", regex=True)
+            )
+
+            plant_map = (
+                df_plant[["Plant Code", "Plant Name", "Zone Name"]]
+                .copy()
+                .assign(**{"Plant Code": lambda d: d["Plant Code"].astype(str).str.strip().str.replace(r"\.0$", "", regex=True)})
+            )
+            df_loc_work = df_loc_work.merge(
+                plant_map,
+                left_on="Planning Plant",
+                right_on="Plant Code",
+                how="left",
+            )
+            df_loc_work["Zone"] = (
+                df_loc_work["Zone Name"]
+                .fillna("Unmapped")
+                .astype(str)
+                .str.strip()
+            )
+            df_loc_work["Zone Name"] = df_loc_work["Zone"]
+            df_loc_work["Plant Name"] = (
+                df_loc_work["Plant Name"]
+                .fillna(df_loc_work["Plant Desc."].astype(str).str.strip())
+            )
+
+            if selected_zone != "All Zones":
+                df_loc_work = df_loc_work[df_loc_work["Zone Name"] == selected_zone]
+            if selected_plant != "All Plants":
+                df_loc_work = df_loc_work[df_loc_work["Plant Name"] == selected_plant]
+
+            # Deduplicate: per plant keep only the latest audit (most recent Audit Start Date)
+            df_loc_work["_date_dedup"] = pd.to_datetime(
+                df_loc_work["Audit Start Date"], format="%d/%m/%Y", errors="coerce"
+            )
+            df_loc_work = (
+                df_loc_work
+                .sort_values("_date_dedup", ascending=False)
+                .drop_duplicates(subset=["Planning Plant"], keep="first")
+                .drop(columns=["_date_dedup"])
+                .reset_index(drop=True)
+            )
+
+            df_loc_filtered = df_loc_work.copy()
+
+            _loc_total = pd.to_numeric(df_loc_filtered["TotalRecomms"], errors="coerce").fillna(0).sum()
+            _loc_closed = pd.to_numeric(df_loc_filtered["ClosedRecomms"], errors="coerce").fillna(0).sum()
+            kpi_location_visit = int(df_loc_filtered["Planning Plant"].nunique())
+            kpi_location_compliance = (_loc_closed / _loc_total) if _loc_total > 0 else 0.0
+    else:
+        loc_visit_error = "Location Visit file not found at Reports/LOCATION_VISIT.xls"
+
+    # Dummy Tank KPI data prep
+    dummy_tank_filtered = pd.DataFrame()
+    dummy_tank_missing_columns = []
+    dummy_tank_error = ""
+    total_dummy_qty = 0.0
+
+    if os.path.exists(DUMMY_TANK_PATH):
+        df_dummy_tank = load_dummy_tank_stock(
+            DUMMY_TANK_PATH,
+            cache_buster=_get_file_cache_token(DUMMY_TANK_PATH),
+        )
+        required_dummy_cols = ["Plant", "Material", "Storage Location", "Base Unit of Measure", "Unrestricted"]
+        dummy_tank_missing_columns = [c for c in required_dummy_cols if c not in df_dummy_tank.columns]
+
+        if not dummy_tank_missing_columns:
+            dummy_tank_filtered = df_dummy_tank[required_dummy_cols].copy()
+
+            # Normalize plant codes to align Dummy Tank report with PlantMaster codes.
+            dummy_tank_filtered["Plant"] = (
+                dummy_tank_filtered["Plant"].astype(str).str.strip().str.replace(r"\.0$", "", regex=True)
+            )
+
+            plant_map = (
+                df_plant[["Plant Code", "Plant Name", "Zone Name"]]
+                .copy()
+                .assign(**{"Plant Code": lambda d: d["Plant Code"].astype(str).str.strip().str.replace(r"\.0$", "", regex=True)})
+            )
+
+            dummy_tank_filtered = dummy_tank_filtered.merge(
+                plant_map,
+                left_on="Plant",
+                right_on="Plant Code",
+                how="left",
+            )
+
+            dummy_tank_filtered = dummy_tank_filtered[
+                ~dummy_tank_filtered["Storage Location"].isin(["DBIT", "DLUB", "DSLP"])
+            ]
+
+            if selected_zone != "All Zones":
+                dummy_tank_filtered = dummy_tank_filtered[dummy_tank_filtered["Zone Name"] == selected_zone]
+            if selected_plant != "All Plants":
+                dummy_tank_filtered = dummy_tank_filtered[dummy_tank_filtered["Plant Name"] == selected_plant]
+
+            dummy_tank_filtered["Zone"] = dummy_tank_filtered["Zone Name"]
+            dummy_tank_filtered["Unrestricted"] = pd.to_numeric(
+                dummy_tank_filtered["Unrestricted"],
+                errors="coerce",
+            ).fillna(0)
+            total_dummy_qty = float(dummy_tank_filtered["Unrestricted"].sum())
+    else:
+        dummy_tank_error = "Dummy Tank file not found at Reports/DUMMY TANK STOCK.xls"
+
+    # PL Unblock KPI data prep
+    pl_unblock_filtered = pd.DataFrame()
+    pl_unblock_missing_columns = []
+    pl_unblock_error = ""
+    total_pl_unblock_qty = 0.0
+
+    if os.path.exists(PIPELINE_STOCK_PATH):
+        df_pipeline_stock = load_pipeline_stock(
+            PIPELINE_STOCK_PATH,
+            cache_buster=_get_file_cache_token(PIPELINE_STOCK_PATH),
+        )
+        required_pl_cols = ["Material", "Plant", "Storage location", "Base Unit of Measure", "Unrestricted", "Blocked"]
+        pl_unblock_missing_columns = [c for c in required_pl_cols if c not in df_pipeline_stock.columns]
+
+        if not pl_unblock_missing_columns:
+            pl_unblock_filtered = df_pipeline_stock[required_pl_cols].copy()
+
+            pl_unblock_filtered["Plant"] = (
+                pl_unblock_filtered["Plant"].astype(str).str.strip().str.replace(r"\.0$", "", regex=True)
+            )
+
+            plant_map = (
+                df_plant[["Plant Code", "Plant Name", "Zone Name"]]
+                .copy()
+                .assign(**{"Plant Code": lambda d: d["Plant Code"].astype(str).str.strip().str.replace(r"\.0$", "", regex=True)})
+            )
+
+            pl_unblock_filtered = pl_unblock_filtered.merge(
+                plant_map,
+                left_on="Plant",
+                right_on="Plant Code",
+                how="left",
+            )
+
+            if selected_zone != "All Zones":
+                pl_unblock_filtered = pl_unblock_filtered[pl_unblock_filtered["Zone Name"] == selected_zone]
+            if selected_plant != "All Plants":
+                pl_unblock_filtered = pl_unblock_filtered[pl_unblock_filtered["Plant Name"] == selected_plant]
+
+            pl_unblock_filtered["Zone"] = pl_unblock_filtered["Zone Name"]
+            pl_unblock_filtered["Unrestricted"] = pd.to_numeric(
+                pl_unblock_filtered["Unrestricted"],
+                errors="coerce",
+            ).fillna(0)
+            pl_unblock_filtered["Blocked"] = pd.to_numeric(
+                pl_unblock_filtered["Blocked"],
+                errors="coerce",
+            ).fillna(0)
+            total_pl_unblock_qty = float(pl_unblock_filtered["Unrestricted"].sum())
+    else:
+        pl_unblock_error = "PL Unblock file not found at Reports/PIPELINE STOCK.xls"
+
+    # Tank Turns KPI data prep
+    tank_turns_df      = pd.DataFrame()
+    tank_turns_error   = ""
+    tank_turns_missing = []
+    tank_turns_value   = 0.0
+
+    if os.path.exists(TANK_TURNS_PATH):
+        df_tank_turns_raw = load_tank_turns(
+            TANK_TURNS_PATH,
+            cache_buster=_get_file_cache_token(TANK_TURNS_PATH),
+        )
+        required_tt_cols  = ["Plant", "Zone", "Plant Name", "Tank", "Unique Ref Id",
+                             "Material", "Material Description", "Tank Capacity",
+                             "Dispatches", "Turn", "Tank Type", "Tank Status",
+                             "Opening Stock", "Receipts", "Closing Stock"]
+        tank_turns_missing = [c for c in required_tt_cols if c not in df_tank_turns_raw.columns]
+
+        if not tank_turns_missing:
+            # Filter to valid PlantMaster plants only
+            valid_plants_set = set(
+                df_plant["Plant Code"].astype(str).str.strip()
+                .str.replace(r"\.0$", "", regex=True).unique()
+            )
+            df_tt = df_tank_turns_raw.copy()
+            df_tt["Plant"] = df_tt["Plant"].astype(str).str.strip().str.replace(r"\.0$", "", regex=True)
+            df_tt = df_tt[df_tt["Plant"].isin(valid_plants_set)]
+
+            # Merge PlantMaster for Zone Name / Plant Name so nav filters work
+            plant_map_tt = (
+                df_plant[["Plant Code", "Plant Name", "Zone Name"]]
+                .copy()
+                .assign(**{"Plant Code": lambda d:
+                           d["Plant Code"].astype(str).str.strip()
+                           .str.replace(r"\.0$", "", regex=True)})
+            )
+            df_tt = df_tt.merge(plant_map_tt, left_on="Plant",
+                                right_on="Plant Code", how="left",
+                                suffixes=("", "_master"))
+
+            # Apply navigation filters
+            if selected_zone != "All Zones":
+                df_tt = df_tt[df_tt["Zone Name"] == selected_zone]
+            if selected_plant != "All Plants":
+                df_tt = df_tt[df_tt["Plant Name_master"].fillna(df_tt.get("Plant Name", "")) == selected_plant]
+
+            df_tt["Dispatches"]    = pd.to_numeric(df_tt["Dispatches"],    errors="coerce").fillna(0)
+            df_tt["Tank Capacity"] = pd.to_numeric(df_tt["Tank Capacity"], errors="coerce").fillna(0)
+
+            total_dispatch  = df_tt["Dispatches"].sum()
+            total_capacity  = df_tt["Tank Capacity"].sum()
+            tank_turns_value = (total_dispatch / total_capacity) if total_capacity != 0 else 0.0
+            tank_turns_df    = df_tt
+    else:
+        tank_turns_error = "Tank Turns file not found at Reports/Tank Turn.xlsx"
+
+    # Render drill-downs as standalone pages (hide dashboard tiles/charts while open)
+    if st.session_state.get("location_visit_page") == "drilldown":
+        if loc_visit_error:
+            st.warning(loc_visit_error)
+        elif loc_visit_missing_columns:
+            st.warning("Missing required column(s): " + ", ".join(loc_visit_missing_columns))
+        else:
+            render_location_visit_details(df_loc_filtered)
+        return
+
+    if st.session_state.get("dummy_tank_clicked") is True:
+        render_dummy_tank_details(
+            dummy_tank_filtered,
+            total_dummy_qty,
+            error_message=dummy_tank_error,
+            missing_columns=dummy_tank_missing_columns,
+        )
+        return
+
+    if st.session_state.get("pl_unblock_clicked") is True:
+        render_pl_unblock_details(
+            pl_unblock_filtered,
+            total_pl_unblock_qty,
+            error_message=pl_unblock_error,
+            missing_columns=pl_unblock_missing_columns,
+        )
+        return
+
+    if st.session_state.get("tank_turns_page") == "drilldown":
+        render_tank_turns_details(
+            tank_turns_df,
+            tank_turns_value,
+            error_message=tank_turns_error,
+            missing_columns=tank_turns_missing,
+        )
+        return
 
     # Active filter badges
     if zone_filter or plant_filter:
@@ -2720,51 +3559,74 @@ def render_dashboard(
     # ── Row 3: New KPI tiles (Coming Soon) ───────────────────────────────
     col9, col10, col11, col12 = st.columns(4, gap="small")
     with col9:
-        kpi_card(
-            label="PL Unblock Qty",
-            value="-",
-            detail="Coming Soon",
+        clicked_pl_unblock = kpi_card(
+            label="PL Unblock Qty (KL)",
+            value=f"{total_pl_unblock_qty / 1000:,.3f}",
+            detail="Total Pipeline Unblock Quantity",
             icon="&#128295;",
-            color_class="c-muted",
-            key="tile_pl_unblock_qty",
+            color_class="c-success" if total_pl_unblock_qty > 0 else "c-muted",
+            key="pl_unblock_btn",
         )
+        st.write(f"[DEBUG] PL Unblock Clicked: {clicked_pl_unblock}")
+        if clicked_pl_unblock:
+            st.session_state["dummy_tank_clicked"] = False
+            st.session_state["selected_tile"] = None
+            st.session_state["tank_turns_page"] = "main"
+            st.session_state["location_visit_page"] = "main"
+            st.session_state["pl_unblock_clicked"] = True
+            st.rerun()
     with col10:
-        kpi_card(
-            label="Dummy Tank Qty.",
-            value="-",
-            detail="Coming Soon",
+        clicked_dummy_tank = kpi_card(
+            label="DUMMY TANK QTY. (KL)",
+            value=f"{total_dummy_qty / 1000:.3f}",
+            detail="Total Dummy Tank Quantity",
             icon="&#128736;",
-            color_class="c-muted",
-            key="tile_dummy_tank_qty",
+            color_class="c-success" if total_dummy_qty > 0 else "c-muted",
+            key="dummy_tank_btn",
         )
+        st.write(f"[DEBUG] Dummy Tank Clicked: {clicked_dummy_tank}")
+        if clicked_dummy_tank:
+            st.session_state["pl_unblock_clicked"] = False
+            st.session_state["selected_tile"] = None
+            st.session_state["tank_turns_page"] = "main"
+            st.session_state["location_visit_page"] = "main"
+            st.session_state["dummy_tank_clicked"] = True
+            st.rerun()
     with col11:
-        kpi_card(
-            label="Tank Churn",
-            value="-",
-            detail="Coming Soon",
+        clicked_tank_turns = kpi_card(
+            label="Tank Turns",
+            value=f"{tank_turns_value:.2f}" if tank_turns_value > 0 else "-",
+            detail="Dispatches / Tank Capacity",
             icon="&#128167;",
-            color_class="c-muted",
-            key="tile_tank_churn",
+            color_class="c-success" if tank_turns_value > 0 else "c-muted",
+            key="tank_turns_btn",
         )
+        if clicked_tank_turns:
+            st.session_state["dummy_tank_clicked"] = False
+            st.session_state["pl_unblock_clicked"] = False
+            st.session_state["selected_tile"] = None
+            st.session_state["location_visit_page"] = "main"
+            st.session_state["tank_turns_page"] = "drilldown"
+            st.rerun()
     with col12:
         # Step 6: KPI tile UI for Location Visit (use kpi_card for alignment)
         clicked_location_visit = kpi_card(
-            label="Location Visit",
-            value=kpi_location_visit,
-            detail="Total Location Visits",
+            label="Location Visit - %Compliance",
+            value=f"{kpi_location_visit:,} | {kpi_location_compliance * 100:.1f}%",
+            detail="Location Visits and Compliance",
             icon="&#128205;",
             color_class="c-success" if kpi_location_visit > 0 else "c-muted",
-            key="tile_location_visit"
+            key="location_visit_btn"
         )
         st.write(f"[DEBUG] Location Visit Clicked: {clicked_location_visit}")
         if clicked_location_visit:
-            st.session_state["selected_tile"] = "location_visit"
-            st.write(f"[DEBUG] Set selected_tile to: {st.session_state['selected_tile']}")
+            st.session_state["pl_unblock_clicked"] = False
+            st.session_state["dummy_tank_clicked"] = False
+            st.session_state["tank_turns_page"] = "main"
+            st.session_state["selected_tile"] = None
+            st.session_state["location_visit_page"] = "drilldown"
+            st.rerun()
     st.markdown("<div style='height:10px'></div>", unsafe_allow_html=True)
-
-    # Step 8: Connect drilldown
-    if st.session_state.get("selected_tile") == "location_visit":
-        render_location_visit_details(df_loc_filtered)
     # --- Restore bar and donut diagrams with defensive checks ---
     try:
         exception_kpi_df = _build_exception_kpi_chart_df(
@@ -4182,8 +5044,8 @@ def render_pending_dc_details(
     <div class="detail-hdr">
         <h3>&#128666; Pending DC's &#8212; Detailed Exception View</h3>
         <p>Zone-wise and Plant-wise breakdown of all Pending Delivery Challans
-        (counted as unique Shipment numbers per Sending Plant)</p>
-    </div>
+        if not df.empty:
+            _render_streamlit_dataframe(df, max_height=420, hide_index=True)
     """, unsafe_allow_html=True)
 
     summary_df   = pending_dc_result.get("summary_df",   pd.DataFrame())
@@ -4424,7 +5286,7 @@ def render_open_delivery_details(
             sortable_df["Delivery Age (Days)"] = pd.to_numeric(
                 sortable_df["Delivery Age (Days)"], errors="coerce"
             )
-        st.dataframe(sortable_df, width='stretch', hide_index=True)
+        _render_streamlit_dataframe(sortable_df, max_height=420, hide_index=True)
 
     st.markdown("---")
     dl_col, _ = st.columns([1, 4])
@@ -4558,7 +5420,7 @@ def render_open_intransit_details(
             sortable_df["In-Transit Age (Days)"] = pd.to_numeric(
                 sortable_df["In-Transit Age (Days)"], errors="coerce"
             )
-        st.dataframe(sortable_df, use_container_width=True, hide_index=True)
+        _render_streamlit_dataframe(sortable_df, max_height=420, hide_index=True)
 
     st.markdown("---")
     dl_col, _ = st.columns([1, 4])
@@ -4692,7 +5554,7 @@ def render_open_sales_orders_details(
             sortable_df["Sales Order Age (Days)"] = pd.to_numeric(
                 sortable_df["Sales Order Age (Days)"], errors="coerce"
             )
-        st.dataframe(sortable_df, use_container_width=True, hide_index=True)
+        _render_streamlit_dataframe(sortable_df, max_height=420, hide_index=True)
 
     st.markdown("---")
     dl_col, _ = st.columns([1, 4])
@@ -4825,7 +5687,7 @@ def render_pending_invoices_details(
             sortable_df["Invoice Age (Days)"] = pd.to_numeric(
                 sortable_df["Invoice Age (Days)"], errors="coerce"
             )
-        st.dataframe(sortable_df, use_container_width=True, hide_index=True)
+        _render_streamlit_dataframe(sortable_df, max_height=420, hide_index=True)
 
     st.markdown("---")
     dl_col, _ = st.columns([1, 4])
@@ -4842,6 +5704,461 @@ def render_pending_invoices_details(
             mime      = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             key       = "dl_pending_inv",
         )
+
+
+def render_dummy_tank_details(
+    dummy_tank_df: pd.DataFrame,
+    total_dummy_qty: float,
+    error_message: str = "",
+    missing_columns: list | None = None,
+) -> None:
+    """Drill-down detail page for Dummy Tank Quantity."""
+    st.markdown("<div class='sec-title'>&#128736; Dummy Tank Qty &#8212; Drill Down</div>", unsafe_allow_html=True)
+
+    back_col, _ = st.columns([1, 6])
+    with back_col:
+        if st.button("&#11013; Back to Dashboard", key="btn_back_dummy_tank"):
+            st.session_state["pl_unblock_clicked"] = False
+            st.session_state["dummy_tank_clicked"] = False
+            st.session_state["tank_turns_page"] = "main"
+            st.rerun()
+
+    if error_message:
+        st.warning(error_message)
+        return
+
+    if missing_columns:
+        st.warning("Missing required column(s): " + ", ".join(missing_columns))
+        return
+
+    if dummy_tank_df is None or dummy_tank_df.empty:
+        st.info("No Dummy Tank data available after applying filters.")
+        return
+
+    if "Zone" not in dummy_tank_df.columns and "Zone Name" in dummy_tank_df.columns:
+        dummy_tank_df = dummy_tank_df.copy()
+        dummy_tank_df["Zone"] = dummy_tank_df["Zone Name"]
+
+    display_cols = ["Material", "Plant", "Zone", "Storage Location", "Base Unit of Measure", "Unrestricted"]
+    display_cols = [c for c in display_cols if c in dummy_tank_df.columns]
+    display_df = dummy_tank_df[display_cols].copy()
+    if "Unrestricted" in display_df.columns:
+        display_df["Unrestricted"] = pd.to_numeric(display_df["Unrestricted"], errors="coerce").fillna(0).map(lambda v: f"{v:,.0f}")
+
+    st.metric("Total Dummy Tank Quantity", f"{total_dummy_qty:,.0f}")
+    st.markdown("<div class='sec-title'>&#128203; Dummy Tank Details</div>", unsafe_allow_html=True)
+    _render_html_table(display_df, max_height=420)
+
+    _download_excel_button(
+        label="&#11015;  Download Dummy Tank Raw Data  (.xlsx)",
+        file_prefix="dummy_tank_stock",
+        sheets={"Dummy_Tank_Details": dummy_tank_df[display_cols].copy()},
+        key="dl_dummy_tank",
+    )
+
+    top5_plants = pd.DataFrame()
+    if "Plant" in dummy_tank_df.columns and "Unrestricted" in dummy_tank_df.columns:
+        top5_plants = (
+            dummy_tank_df.groupby("Plant", dropna=False, as_index=False)["Unrestricted"]
+            .sum()
+            .sort_values("Unrestricted", ascending=False)
+            .head(5)
+        )
+
+    top5_zones = pd.DataFrame()
+    if "Zone" in dummy_tank_df.columns and "Unrestricted" in dummy_tank_df.columns:
+        zone_series = dummy_tank_df["Zone"].fillna("").astype(str).str.strip()
+        if zone_series.ne("").any():
+            zone_df = dummy_tank_df.copy()
+            zone_df["Zone"] = zone_series
+            zone_df = zone_df[zone_df["Zone"] != ""]
+            top5_zones = (
+                zone_df.groupby("Zone", dropna=False, as_index=False)["Unrestricted"]
+                .sum()
+                .sort_values("Unrestricted", ascending=False)
+                .head(5)
+            )
+
+    st.markdown("<div class='sec-title'>&#128200; Top 5 Analysis</div>", unsafe_allow_html=True)
+    col1, col2 = st.columns(2)
+
+    with col1:
+        st.markdown("Top 5 Plants")
+        if not top5_plants.empty:
+            top5_plants_display = top5_plants.copy()
+            top5_plants_display["Unrestricted"] = top5_plants_display["Unrestricted"].map(lambda v: f"{v:,.3f}")
+            _render_html_table(top5_plants_display, max_height=280)
+        else:
+            st.info("Plant-wise data not available.")
+
+    with col2:
+        st.markdown("Top 5 Zones")
+        if not top5_zones.empty:
+            top5_zones_display = top5_zones.copy()
+            top5_zones_display["Unrestricted"] = top5_zones_display["Unrestricted"].map(lambda v: f"{v:,.3f}")
+            _render_html_table(top5_zones_display, max_height=280)
+        else:
+            st.info("Zone column not available in source file.")
+
+    charts_col1, charts_col2 = st.columns(2)
+    with charts_col1:
+        if not top5_plants.empty:
+            donut = px.pie(
+                top5_plants,
+                names="Plant",
+                values="Unrestricted",
+                hole=0.55,
+                title="Top 5 Plants by Unrestricted (Donut)",
+            )
+            st.plotly_chart(donut, use_container_width=True)
+
+    with charts_col2:
+        if not top5_plants.empty:
+            bar_plants = px.bar(
+                top5_plants,
+                x="Plant",
+                y="Unrestricted",
+                title="Top 5 Plants by Unrestricted",
+            )
+            st.plotly_chart(bar_plants, use_container_width=True)
+
+    if not top5_zones.empty:
+        bar_zones = px.bar(
+            top5_zones,
+            x="Zone",
+            y="Unrestricted",
+            title="Top 5 Zones by Unrestricted",
+        )
+        st.plotly_chart(bar_zones, use_container_width=True)
+
+
+def render_pl_unblock_details(
+    pl_unblock_df: pd.DataFrame,
+    total_pl_unblock_qty: float,
+    error_message: str = "",
+    missing_columns: list | None = None,
+) -> None:
+    """Drill-down detail page for PL Unblock Quantity."""
+    st.markdown("<div class='sec-title'>&#128295; PL Unblock Qty &#8212; Drill Down</div>", unsafe_allow_html=True)
+
+    back_col, _ = st.columns([1, 6])
+    with back_col:
+        if st.button("&#11013; Back to Dashboard", key="btn_back_pl_unblock"):
+            st.session_state["dummy_tank_clicked"] = False
+            st.session_state["pl_unblock_clicked"] = False
+            st.session_state["tank_turns_page"] = "main"
+            st.rerun()
+
+    if error_message:
+        st.warning(error_message)
+        return
+
+    if missing_columns:
+        st.warning("Missing required column(s): " + ", ".join(missing_columns))
+        return
+
+    if pl_unblock_df is None or pl_unblock_df.empty:
+        st.info("No PL Unblock data available after applying filters.")
+        return
+
+    if "Zone" not in pl_unblock_df.columns and "Zone Name" in pl_unblock_df.columns:
+        pl_unblock_df = pl_unblock_df.copy()
+        pl_unblock_df["Zone"] = pl_unblock_df["Zone Name"]
+
+    display_cols = ["Material", "Plant", "Zone", "Storage location", "Base Unit of Measure", "Unrestricted", "Blocked"]
+    display_cols = [c for c in display_cols if c in pl_unblock_df.columns]
+    display_df = pl_unblock_df[display_cols].copy()
+
+    st.metric("Total Pipeline Unblock Quantity", f"{total_pl_unblock_qty:,.0f}")
+    st.markdown("<div class='sec-title'>&#128203; PL Unblock Details</div>", unsafe_allow_html=True)
+
+    if not display_df.empty:
+        display_df = display_df.copy()
+        for num_col in ["Unrestricted", "Blocked"]:
+            if num_col in display_df.columns:
+                display_df[num_col] = pd.to_numeric(display_df[num_col], errors="coerce").fillna(0).map(lambda v: f"{v:,.0f}")
+        _render_html_table(display_df, max_height=420)
+
+    _download_excel_button(
+        label="&#11015;  Download PL Unblock Raw Data  (.xlsx)",
+        file_prefix="pl_unblock_stock",
+        sheets={"PL_Unblock_Details": pl_unblock_df[display_cols].copy()},
+        key="dl_pl_unblock",
+    )
+
+    top3_plants = pd.DataFrame()
+    if "Plant" in pl_unblock_df.columns and "Unrestricted" in pl_unblock_df.columns:
+        top3_plants = (
+            pl_unblock_df.groupby("Plant", dropna=False, as_index=False)["Unrestricted"]
+            .sum()
+            .sort_values("Unrestricted", ascending=False)
+            .head(3)
+        )
+
+    top3_zones = pd.DataFrame()
+    if "Zone" in pl_unblock_df.columns and "Unrestricted" in pl_unblock_df.columns:
+        zone_series = pl_unblock_df["Zone"].fillna("").astype(str).str.strip()
+        if zone_series.ne("").any():
+            zone_df = pl_unblock_df.copy()
+            zone_df["Zone"] = zone_series
+            zone_df = zone_df[zone_df["Zone"] != ""]
+            top3_zones = (
+                zone_df.groupby("Zone", dropna=False, as_index=False)["Unrestricted"]
+                .sum()
+                .sort_values("Unrestricted", ascending=False)
+                .head(3)
+            )
+
+    st.markdown("<div class='sec-title'>&#128200; Top 3 Analysis</div>", unsafe_allow_html=True)
+    col1, col2 = st.columns(2)
+
+    with col1:
+        st.markdown("Top 3 Plants")
+        if not top3_plants.empty:
+            top3_plants_table = top3_plants.copy()
+            top3_plants_table["Unrestricted"] = top3_plants_table["Unrestricted"].map(lambda v: f"{v:,.3f}")
+            _render_html_table(top3_plants_table, max_height=280)
+        else:
+            st.info("Plant-wise data not available.")
+
+    with col2:
+        st.markdown("Top 3 Zones")
+        if not top3_zones.empty:
+            top3_zones_table = top3_zones.copy()
+            top3_zones_table["Unrestricted"] = top3_zones_table["Unrestricted"].map(lambda v: f"{v:,.3f}")
+            _render_html_table(top3_zones_table, max_height=280)
+        else:
+            st.info("Zone column not available in source file.")
+
+    charts_col1, charts_col2 = st.columns(2)
+    with charts_col1:
+        if not top3_plants.empty:
+            donut = px.pie(
+                top3_plants,
+                names="Plant",
+                values="Unrestricted",
+                hole=0.55,
+                title="Top 3 Plants by Unrestricted (Donut)",
+            )
+            st.plotly_chart(donut, use_container_width=True)
+
+    with charts_col2:
+        if not top3_plants.empty:
+            bar_plants = px.bar(
+                top3_plants,
+                x="Plant",
+                y="Unrestricted",
+                title="Top 3 Plants by Unrestricted",
+            )
+            st.plotly_chart(bar_plants, use_container_width=True)
+
+    if not top3_zones.empty:
+        bar_zones = px.bar(
+            top3_zones,
+            x="Zone",
+            y="Unrestricted",
+            title="Top 3 Zones by Unrestricted",
+        )
+        st.plotly_chart(bar_zones, use_container_width=True)
+
+
+def render_tank_turns_details(
+    tt_df          : "pd.DataFrame",
+    tank_turns_val : float,
+    error_message  : str  = "",
+    missing_columns: list | None = None,
+) -> None:
+    """Drill-down detail page for Tank Turns KPI."""
+    import plotly.express as px
+
+    st.markdown("<div class='sec-title'>&#128167; Tank Turns &#8212; Drill Down</div>",
+                unsafe_allow_html=True)
+
+    back_col, _ = st.columns([1, 6])
+    with back_col:
+        if st.button("&#11013; Back to Dashboard", key="btn_back_tank_turns"):
+            st.session_state["tank_turns_page"] = "main"
+            st.session_state["dummy_tank_clicked"] = False
+            st.session_state["pl_unblock_clicked"] = False
+            st.rerun()
+
+    if error_message:
+        st.warning(error_message)
+        return
+    if missing_columns:
+        st.warning("Missing required column(s): " + ", ".join(missing_columns))
+        return
+    if tt_df is None or tt_df.empty:
+        st.info("No Tank Turns data available after applying filters.")
+        return
+
+    st.metric("Tank Turns (Dispatches / Capacity)", f"{tank_turns_val:.2f}")
+
+    # ── Drill-down filters ────────────────────────────────────────────────────
+    st.markdown("<div class='sec-title'>&#128269; Drill-Down Filters</div>",
+                unsafe_allow_html=True)
+    f1, f2, f3, f4 = st.columns(4)
+
+    def _sorted_opts(series):
+        return ["All"] + sorted(series.dropna().astype(str).unique().tolist())
+
+    sel_zone_dd = f1.selectbox(
+        "Zone",
+        _sorted_opts(tt_df.get("Zone Name", tt_df.get("Zone", pd.Series(dtype=str)))),
+        key="tt_filter_zone",
+    )
+    sel_mat_desc = f2.selectbox(
+        "Material Description",
+        _sorted_opts(tt_df.get("Material Description", pd.Series(dtype=str))),
+        key="tt_filter_mat_desc",
+    )
+    sel_mat = f3.selectbox(
+        "Material",
+        _sorted_opts(tt_df.get("Material", pd.Series(dtype=str))),
+        key="tt_filter_mat",
+    )
+    sel_plant_name = f4.selectbox(
+        "Plant Name",
+        _sorted_opts(tt_df.get("Plant Name_master",
+                               tt_df.get("Plant Name", pd.Series(dtype=str)))),
+        key="tt_filter_plant",
+    )
+
+    # Apply local filters
+    df_view = tt_df.copy()
+    zone_col = "Zone Name" if "Zone Name" in df_view.columns else "Zone"
+    pm_col   = "Plant Name_master" if "Plant Name_master" in df_view.columns else "Plant Name"
+
+    if sel_zone_dd != "All" and zone_col in df_view.columns:
+        df_view = df_view[df_view[zone_col].astype(str) == sel_zone_dd]
+    if sel_mat_desc != "All" and "Material Description" in df_view.columns:
+        df_view = df_view[df_view["Material Description"].astype(str) == sel_mat_desc]
+    if sel_mat != "All" and "Material" in df_view.columns:
+        df_view = df_view[df_view["Material"].astype(str) == sel_mat]
+    if sel_plant_name != "All" and pm_col in df_view.columns:
+        df_view = df_view[df_view[pm_col].astype(str) == sel_plant_name]
+
+    # Recompute KPI for filtered view
+    flt_dispatch  = pd.to_numeric(df_view["Dispatches"],    errors="coerce").fillna(0).sum()
+    flt_capacity  = pd.to_numeric(df_view["Tank Capacity"], errors="coerce").fillna(0).sum()
+    flt_turns_val = (flt_dispatch / flt_capacity) if flt_capacity != 0 else 0.0
+    st.metric("Filtered Tank Turns", f"{flt_turns_val:.2f}")
+
+    # ── Pivot Table ───────────────────────────────────────────────────────────
+    st.markdown("<div class='sec-title'>&#128203; Tank Turns Details (Pivot)</div>",
+                unsafe_allow_html=True)
+
+    pivot_index = [c for c in ["Plant", "Unique Ref Id", "Tank",
+                               "Tank Capacity", "Tank Type", "Tank Status"]
+                  if c in df_view.columns]
+    pivot_values = {c: v for c, v in [
+        ("Opening Stock", "sum"), ("Receipts", "sum"),
+        ("Dispatches", "sum"), ("Closing Stock", "sum"), ("Turn", "mean"),
+    ] if c in df_view.columns}
+
+    if pivot_index and pivot_values:
+        try:
+            pivot = df_view.groupby(pivot_index, dropna=False).agg(pivot_values).reset_index()
+            pivot.rename(columns={
+                "Opening Stock": "Sum of Opening Stock",
+                "Receipts"     : "Sum of Receipts",
+                "Dispatches"   : "Sum of Dispatches",
+                "Closing Stock": "Sum of Closing Stock",
+                "Turn"         : "Average of Turn",
+            }, inplace=True)
+
+            # Format numeric display columns
+            for nc in ["Sum of Opening Stock", "Sum of Receipts",
+                       "Sum of Dispatches", "Sum of Closing Stock"]:
+                if nc in pivot.columns:
+                    pivot[nc] = pd.to_numeric(pivot[nc], errors="coerce").fillna(0).map(lambda v: f"{v:,.0f}")
+            if "Average of Turn" in pivot.columns:
+                pivot["Average of Turn"] = pd.to_numeric(
+                    pivot["Average of Turn"], errors="coerce").fillna(0).map(lambda v: f"{v:.2f}")
+            if "Tank Capacity" in pivot.columns:
+                pivot["Tank Capacity"] = pd.to_numeric(
+                    pivot["Tank Capacity"], errors="coerce").fillna(0).map(lambda v: f"{v:,.0f}")
+
+            _render_html_table(pivot, max_height=480)
+        except Exception as e:
+            st.error(f"Pivot build error: {e}")
+    else:
+        st.info("Insufficient columns for pivot table.")
+
+    _download_excel_button(
+        label="&#11015;  Download Tank Turns Raw Data  (.xlsx)",
+        file_prefix="tank_turns",
+        sheets={"Tank_Turns_Raw": df_view.reset_index(drop=True)},
+        key="dl_tank_turns",
+    )
+
+    # ── Top Analysis ──────────────────────────────────────────────────────────
+    st.markdown("<div class='sec-title'>&#128200; Top Analysis</div>",
+                unsafe_allow_html=True)
+
+    df_num = df_view.copy()
+    df_num["Dispatches"]    = pd.to_numeric(df_num["Dispatches"],    errors="coerce").fillna(0)
+    df_num["Tank Capacity"] = pd.to_numeric(df_num["Tank Capacity"], errors="coerce").fillna(0)
+
+    top3_plants = pd.DataFrame()
+    if "Plant" in df_num.columns and "Turn" in df_num.columns:
+        _grp_cols = ["Plant"] + (["Plant Name"] if "Plant Name" in df_num.columns else [])
+        top3_plants = (
+            df_num.groupby(_grp_cols, dropna=False, as_index=False)["Turn"]
+            .mean().rename(columns={"Turn": "Average Turn"})
+            .sort_values("Average Turn", ascending=False).head(3)
+        )
+
+    top3_zones = pd.DataFrame()
+    zone_col_disp = "Zone Name" if "Zone Name" in df_num.columns else ("Zone" if "Zone" in df_num.columns else None)
+    if zone_col_disp and "Turn" in df_num.columns:
+        z_series = df_num[zone_col_disp].fillna("").astype(str).str.strip()
+        if z_series.ne("").any():
+            tmp = df_num.copy(); tmp["_zone"] = z_series
+            tmp = tmp[tmp["_zone"] != ""]
+            top3_zones = (
+                tmp.groupby("_zone", dropna=False, as_index=False)["Turn"]
+                .mean().rename(columns={"Turn": "Average Turn", "_zone": "Zone"})
+                .sort_values("Average Turn", ascending=False).head(3)
+                .rename(columns={"_zone": "Zone"})
+            )
+
+    ca, cb = st.columns(2)
+    with ca:
+        st.markdown("Top 3 Plants")
+        if not top3_plants.empty:
+            tp_disp = top3_plants.copy()
+            tp_disp["Average Turn"] = tp_disp["Average Turn"].map(lambda v: f"{v:,.2f}")
+            _cols_order = ["Plant"] + (["Plant Name"] if "Plant Name" in tp_disp.columns else []) + ["Average Turn"]
+            _render_html_table(tp_disp[_cols_order], max_height=220)
+        else:
+            st.info("Plant data not available.")
+    with cb:
+        st.markdown("Top 3 Zones")
+        if not top3_zones.empty:
+            tz_disp = top3_zones.copy()
+            tz_disp["Average Turn"] = tz_disp["Average Turn"].map(lambda v: f"{v:,.2f}")
+            _render_html_table(tz_disp, max_height=220)
+        else:
+            st.info("Zone data not available.")
+
+    # ── Charts ────────────────────────────────────────────────────────────────
+    ch1, ch2 = st.columns(2)
+    with ch1:
+        if not top3_plants.empty:
+            donut = px.pie(top3_plants, names="Plant", values="Average Turn",
+                           hole=0.55, title="Top 3 Plants by Average Turn (Donut)")
+            st.plotly_chart(donut, use_container_width=True)
+    with ch2:
+        if not top3_plants.empty:
+            bar_p = px.bar(top3_plants, x="Plant", y="Average Turn",
+                           title="Top 3 Plants by Average Turn")
+            st.plotly_chart(bar_p, use_container_width=True)
+
+    if not top3_zones.empty:
+        bar_z = px.bar(top3_zones, x="Zone", y="Average Turn",
+                       title="Top 3 Zones by Average Turn")
+        st.plotly_chart(bar_z, use_container_width=True)
 
 
 def render_tank_reco_details(
@@ -5099,7 +6416,7 @@ def render_open_shortages_sales_details(
     )
     sortable_df = detail_df[detail_cols].copy() if detail_cols else detail_df.copy()
     if not sortable_df.empty:
-        st.dataframe(sortable_df, use_container_width=True, hide_index=True)
+        _render_streamlit_dataframe(sortable_df, max_height=420, hide_index=True)
 
     unmatched = open_short_sales_result.get("unmatched", [])
     if unmatched:
@@ -5237,7 +6554,7 @@ def render_open_shortages_sto_details(
     )
     sortable_df = detail_df[detail_cols].copy() if detail_cols else detail_df.copy()
     if not sortable_df.empty:
-        st.dataframe(sortable_df, use_container_width=True, hide_index=True)
+        _render_streamlit_dataframe(sortable_df, max_height=420, hide_index=True)
 
     unmatched = open_short_sto_result.get("unmatched", [])
     if unmatched:
@@ -5276,6 +6593,10 @@ def main() -> None:
 
     if "page" not in st.session_state:
         st.session_state["page"] = "dashboard"
+    if "location_visit_page" not in st.session_state:
+        st.session_state["location_visit_page"] = "main"
+    if "tank_turns_page" not in st.session_state:
+        st.session_state["tank_turns_page"] = "main"
 
     inject_css()
 
@@ -5291,6 +6612,12 @@ def main() -> None:
     except Exception as exc:
         st.error(f"Failed to load PlantMaster: {exc}")
         st.stop()
+
+    zone_count = int(df_plant["Zone Name"].nunique()) if "Zone Name" in df_plant.columns else 0
+    if zone_count != 16:
+        st.sidebar.warning(
+            f"PlantMaster currently has {zone_count} active zone(s). Expected 16 as per latest structure."
+        )
 
     try:
         load_zone_master()
