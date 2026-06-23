@@ -2973,6 +2973,22 @@ def _render_sidebar_system_info(
 def render_sidebar(df_plant: pd.DataFrame) -> tuple:
     """Render navigation sidebar. Returns (zones, plants, uploaded_file, system_info_slot)."""
     with st.sidebar:
+        # ── Temporary light-theme switcher ──────────────────────────────
+        import streamlit.components.v1 as _sc
+        _sc.html("""
+<button onclick="(function(){
+    try{
+        var ls=window.parent.localStorage;
+        ['stActiveTheme','theme','st_theme','streamlit_theme'].forEach(function(k){ls.removeItem(k);});
+        window.parent.location.href=window.parent.location.pathname+'?theme=light';
+    }catch(e){}
+})()" style="width:100%;padding:14px 8px;background:#FF6600;color:#fff;
+border:none;border-radius:10px;font-size:15px;font-weight:900;
+cursor:pointer;letter-spacing:0.05em;margin-bottom:6px;">
+&#9728; CLICK HERE — Switch to White Theme
+</button>""", height=60)
+        # ───────────────────────────────────────────────────────────────
+
         sidebar_logo_html = '<div style="font-size:2.6rem;">&#9981;</div>'
         try:
             if os.path.exists(SIDE_PANEL_LOGO_PATH):
