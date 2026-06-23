@@ -6698,6 +6698,31 @@ def main() -> None:
 
     inject_css()
 
+    # Force light theme by clearing any dark-mode localStorage entry the
+    # browser may have stored. Runs in a zero-height same-origin iframe so it
+    # can access window.parent.localStorage. The reload fires only once
+    # (the first load when a dark preference is found); after that the key is
+    # gone and the page stays stable.
+    import streamlit.components.v1 as _components
+    _components.html("""
+<script>
+(function(){
+    try {
+        var ls = window.parent.localStorage;
+        var reloaded = false;
+        ['stActiveTheme','theme','st_theme','streamlit_theme'].forEach(function(k){
+            var v = ls.getItem(k);
+            if (v && v.toLowerCase().includes('dark')) {
+                ls.removeItem(k);
+                reloaded = true;
+            }
+        });
+        if (reloaded) { window.parent.location.reload(); }
+    } catch(e) {}
+})();
+</script>
+""", height=0, scrolling=False)
+
     # Load master data
     try:
         df_plant = load_plant_master()
