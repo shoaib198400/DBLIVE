@@ -349,23 +349,53 @@ def inject_css() -> None:
     """Inject all custom CSS for the HPCL corporate theme."""
     st.markdown(f"""
     <style>
-    /* ── Force light/white background (overrides Streamlit dark mode) ── */
+    /* ══ FORCE LIGHT THEME — overrides Streamlit Cloud dark mode ══════ */
+    /* Override Streamlit's internal CSS variables (works in all versions) */
+    :root,
+    :root[data-theme="dark"],
+    [data-theme="dark"] {{
+        --background-color:           {C['bg']} !important;
+        --secondary-background-color: #F0F2F6   !important;
+        --text-color:                 #262730   !important;
+    }}
+    /* Target every container Streamlit uses across v1.20 – v1.45 */
+    html,
+    body,
+    #root,
+    .stApp,
+    div.stApp,
     [data-testid="stApp"],
     [data-testid="stAppViewContainer"],
+    [data-testid="stAppViewBlockContainer"],
     [data-testid="stMain"],
     [data-testid="stMainBlockContainer"],
-    section.main, .main {{
+    [data-testid="block-container"],
+    section.main,
+    .main,
+    .block-container {{
         background-color: {C['bg']} !important;
         color: #262730 !important;
     }}
-    /* Dropdowns, inputs, text areas — keep white in any theme */
-    [data-testid="stSelectbox"] > div,
-    [data-testid="stTextInput"] > div > div,
-    [data-testid="stNumberInput"] > div > div,
-    .stSelectbox div[data-baseweb="select"] > div,
-    .stTextInput input, .stNumberInput input {{
+    /* Plain text nodes inside the page */
+    p, span, div, li, td, th, label {{
+        color: #262730;
+    }}
+    /* Selectbox / dropdowns / inputs — always white fill */
+    [data-baseweb="select"] > div,
+    [data-baseweb="input"]  > div,
+    [data-baseweb="textarea"],
+    [data-testid="stSelectbox"]  div[class*="container"],
+    [data-testid="stTextInput"]  input,
+    [data-testid="stNumberInput"] input,
+    .stSelectbox  div[data-baseweb="select"] > div,
+    .stTextInput  input,
+    .stNumberInput input {{
         background-color: #FFFFFF !important;
         color: #262730 !important;
+    }}
+    /* Metric tiles keep their default look */
+    [data-testid="metric-container"] {{
+        background-color: #FFFFFF !important;
     }}
 
     /* ── Base ─────────────────────────────────────────── */
