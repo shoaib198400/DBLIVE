@@ -349,6 +349,25 @@ def inject_css() -> None:
     """Inject all custom CSS for the HPCL corporate theme."""
     st.markdown(f"""
     <style>
+    /* ── Force light/white background (overrides Streamlit dark mode) ── */
+    [data-testid="stApp"],
+    [data-testid="stAppViewContainer"],
+    [data-testid="stMain"],
+    [data-testid="stMainBlockContainer"],
+    section.main, .main {{
+        background-color: {C['bg']} !important;
+        color: #262730 !important;
+    }}
+    /* Dropdowns, inputs, text areas — keep white in any theme */
+    [data-testid="stSelectbox"] > div,
+    [data-testid="stTextInput"] > div > div,
+    [data-testid="stNumberInput"] > div > div,
+    .stSelectbox div[data-baseweb="select"] > div,
+    .stTextInput input, .stNumberInput input {{
+        background-color: #FFFFFF !important;
+        color: #262730 !important;
+    }}
+
     /* ── Base ─────────────────────────────────────────── */
     html, body, [class*="css"] {{
         font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
@@ -1325,23 +1344,30 @@ def load_location_visit(path: str, cache_buster: tuple[int, int] | None = None) 
         if _capa_col is not None:
             _CLOSED = {"Closed", "Completed"}
             _OPEN   = {"Open", "Reopened"}
-            _gkeys  = [c for c in ["Planning Plant", "Plant Desc.", "Zone",
-                                   "Audit Number", "Audit Start Date", "Audit End Date"]
-                       if c in df.columns]
-            if _gkeys:
+            # Group by Plant+Audit only (matches Sr. Manager Inspection Dashboard logic)
+            # Extra descriptor columns (Zone, dates) are taken as first non-null value per group
+            _agg_keys = [c for c in ["Planning Plant", "Audit Number"] if c in df.columns]
+            _extra    = [c for c in ["Plant Desc.", "Zone", "Audit Start Date", "Audit End Date"] if c in df.columns]
+            if _agg_keys:
                 _records = []
-                for _vals, _grp in df.groupby(_gkeys, dropna=False):
+                for _vals, _grp in df.groupby(_agg_keys, dropna=False):
                     _statuses = _grp[_capa_col].astype(str).str.strip()
                     # exclude blank and NaN CAPA Status rows (NaN becomes "nan" after astype str)
                     _valid    = _statuses[(_statuses != "") & (_statuses.str.lower() != "nan")]
                     if len(_valid) == 0:
                         continue
-                    _row = dict(zip(_gkeys, _vals if isinstance(_vals, tuple) else [_vals]))
+                    _row = dict(zip(_agg_keys, _vals if isinstance(_vals, tuple) else [_vals]))
+                    for _ec in _extra:
+                        _nonnull = _grp[_ec].dropna()
+                        _row[_ec] = _nonnull.iloc[0] if not _nonnull.empty else ""
                     _row["TotalRecomms"]  = len(_valid)
                     _row["ClosedRecomms"] = int(_valid.isin(_CLOSED).sum())
                     _row["OpenRecomms"]   = int(_valid.isin(_OPEN).sum())
                     _records.append(_row)
                 df = pd.DataFrame(_records)
+                # Remap SWZ → COZ (matches Sr. Manager zone normalisation)
+                if "Zone" in df.columns:
+                    df["Zone"] = df["Zone"].replace("SWZ", "COZ")
 
         for col in ["Planning Plant", "Plant Desc.", "Audit Number", "Zone"]:
             if col in df.columns:
@@ -3194,15 +3220,25 @@ def render_dashboard(
             if selected_plant != "All Plants":
                 df_loc_work = df_loc_work[df_loc_work["Plant Name"] == selected_plant]
 
-            # Deduplicate: per plant keep only the latest audit (most recent Audit Start Date)
+            # Deduplicate: 1 record per Plant+FY+Quarter (latest audit) — matches Sr. Manager Inspection Dashboard
+            def _get_fy_quarter(dt):
+                if pd.isna(dt): return ("Unknown", "Unknown")
+                m, y = dt.month, dt.year
+                if m >= 4:
+                    return (str(y)[2:] + "-" + str(y + 1)[2:], "Q" + str(((m - 4) // 3) + 1))
+                return (str(y - 1)[2:] + "-" + str(y)[2:], "Q4")
+
             df_loc_work["_date_dedup"] = pd.to_datetime(
                 df_loc_work["Audit Start Date"], format="%d/%m/%Y", errors="coerce"
             )
+            _fq = df_loc_work["_date_dedup"].apply(_get_fy_quarter)
+            df_loc_work["_FY"]      = _fq.apply(lambda x: x[0])
+            df_loc_work["_Quarter"] = _fq.apply(lambda x: x[1])
             df_loc_work = (
                 df_loc_work
                 .sort_values("_date_dedup", ascending=False)
-                .drop_duplicates(subset=["Planning Plant"], keep="first")
-                .drop(columns=["_date_dedup"])
+                .drop_duplicates(subset=["Planning Plant", "_FY", "_Quarter"], keep="first")
+                .drop(columns=["_date_dedup", "_FY", "_Quarter"])
                 .reset_index(drop=True)
             )
 
