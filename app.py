@@ -440,10 +440,12 @@ def inject_css() -> None:
         --hpcl-sidebar-top-shift: 0rem;
     }}
     [data-testid="stHeader"] {{
-        display: none !important;
+        display: block !important;
+        background: transparent !important;
+        height: 2.5rem !important;
     }}
     [data-testid="stHeader"] > div {{
-        display: none !important;
+        display: block !important;
     }}
     [data-testid="stDecoration"] {{
         display: none !important;
