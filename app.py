@@ -350,9 +350,23 @@ def inject_css() -> None:
     st.markdown(f"""
     <style>
     /* ══ FORCE LIGHT THEME ════════════════════════════════════════════ */
-    /* 1. Tell the browser this page is light — defeats prefers-color-scheme:dark */
+    /* 1. Pseudo-element white canvas — sits below all content, cannot be
+          overridden by Streamlit's React theme engine */
+    body::before {{
+        content: '';
+        position: fixed;
+        inset: 0;
+        background-color: {C['bg']};
+        z-index: -9999;
+        pointer-events: none;
+    }}
+    /* 2. Tell the browser this page is light — defeats prefers-color-scheme:dark */
     html {{
         color-scheme: light only !important;
+        background-color: {C['bg']} !important;
+    }}
+    body {{
+        background-color: {C['bg']} !important;
     }}
     /* 2. Override Streamlit's CSS custom properties in every possible scope */
     :root,
