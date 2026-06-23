@@ -451,11 +451,14 @@ def inject_css() -> None:
         display: none !important;
     }}
     [data-testid="stToolbar"] {{
-        display: none !important;
+        display: flex !important;
+        visibility: visible !important;
+        opacity: 1 !important;
     }}
     [data-testid="stToolbar"] button,
     [data-testid="stToolbar"] [data-testid="baseButton-header"] {{
-        display: none !important;
+        display: inline-flex !important;
+        visibility: visible !important;
     }}
     [data-testid="stSidebarCollapsedControl"] {{
         display: none !important;
@@ -3300,7 +3303,7 @@ def render_dashboard(
             df_loc_work["_Quarter"] = _fq.apply(lambda x: x[1])
             df_loc_work = (
                 df_loc_work
-                .sort_values("_date_dedup", ascending=False)
+                .sort_values(["_date_dedup", "Audit Number"], ascending=[False, False])
                 .drop_duplicates(subset=["Planning Plant", "_FY", "_Quarter"], keep="first")
                 .drop(columns=["_date_dedup", "_FY", "_Quarter"])
                 .reset_index(drop=True)
