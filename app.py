@@ -6698,27 +6698,76 @@ def main() -> None:
 
     inject_css()
 
-    # Force light theme by clearing any dark-mode localStorage entry the
-    # browser may have stored. Runs in a zero-height same-origin iframe so it
-    # can access window.parent.localStorage. The reload fires only once
-    # (the first load when a dark preference is found); after that the key is
-    # gone and the page stays stable.
+    # ── Force light theme via JS MutationObserver ──────────────────────
+    # Streamlit's React engine re-applies dark background-color as an inline
+    # style after every render, defeating CSS-only fixes. This iframe (same-
+    # origin) uses setProperty(...,'important') + MutationObserver to
+    # continuously re-enforce the light palette whenever Streamlit touches
+    # the DOM.  setInterval(100ms) catches any React re-renders that slip past.
     import streamlit.components.v1 as _components
     _components.html("""
 <script>
 (function(){
+  var BG  = '#F4F6FA';
+  var BG2 = '#F0F2F6';
+  var TX  = '#262730';
+
+  function applyLight() {
     try {
-        var ls = window.parent.localStorage;
-        var reloaded = false;
-        ['stActiveTheme','theme','st_theme','streamlit_theme'].forEach(function(k){
-            var v = ls.getItem(k);
-            if (v && v.toLowerCase().includes('dark')) {
-                ls.removeItem(k);
-                reloaded = true;
-            }
-        });
-        if (reloaded) { window.parent.location.reload(); }
+      var doc = window.parent.document;
+      // Force body & root
+      doc.documentElement.style.setProperty('background-color', BG,  'important');
+      doc.documentElement.style.setProperty('color',            TX,  'important');
+      doc.body.style.setProperty('background-color', BG, 'important');
+      doc.body.style.setProperty('color',            TX, 'important');
+
+      // Force every Streamlit container selector
+      var sels = [
+        '#root',
+        '.stApp',
+        '[data-testid="stApp"]',
+        '[data-testid="stAppViewContainer"]',
+        '[data-testid="stAppViewBlockContainer"]',
+        '[data-testid="stMain"]',
+        '[data-testid="stMainBlockContainer"]',
+        '[data-testid="block-container"]',
+        'section.main',
+        '.main'
+      ];
+      sels.forEach(function(s){
+        var el = doc.querySelector(s);
+        if (el) {
+          el.style.setProperty('background-color', BG, 'important');
+          el.style.setProperty('color',            TX, 'important');
+        }
+      });
+
+      // Clear stored dark-theme localStorage key (all known variants)
+      var ls = window.parent.localStorage;
+      ['stActiveTheme','theme','st_theme','streamlit_theme'].forEach(function(k){
+        var v = ls.getItem(k);
+        if (v && v.toLowerCase().includes('dark')) { ls.removeItem(k); }
+      });
     } catch(e) {}
+  }
+
+  // Fire immediately and after short delay (wait for React to mount)
+  applyLight();
+  setTimeout(applyLight, 300);
+  setTimeout(applyLight, 800);
+  setTimeout(applyLight, 2000);
+
+  // MutationObserver: re-apply whenever Streamlit mutates the DOM/styles
+  var obs = new MutationObserver(applyLight);
+  try {
+    obs.observe(window.parent.document.body, {
+      attributes: true, attributeFilter: ['style','class'],
+      childList: true,  subtree: true
+    });
+  } catch(e) {}
+
+  // Periodic safety net every 500 ms
+  setInterval(applyLight, 500);
 })();
 </script>
 """, height=0, scrolling=False)
