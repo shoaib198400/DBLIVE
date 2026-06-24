@@ -440,29 +440,16 @@ def inject_css() -> None:
         --hpcl-sidebar-top-shift: 0rem;
     }}
     [data-testid="stHeader"] {{
-        display: block !important;
-        background: transparent !important;
-        height: 2.5rem !important;
-    }}
-    [data-testid="stHeader"] > div {{
-        display: block !important;
+        display: none !important;
     }}
     [data-testid="stDecoration"] {{
         display: none !important;
     }}
     [data-testid="stToolbar"] {{
-        display: flex !important;
-        visibility: visible !important;
-        opacity: 1 !important;
-    }}
-    [data-testid="stToolbar"] button,
-    [data-testid="stToolbar"] [data-testid="baseButton-header"] {{
-        display: inline-flex !important;
-        visibility: visible !important;
+        display: none !important;
     }}
     [data-testid="stSidebarCollapsedControl"] {{
-        display: block !important;
-        visibility: visible !important;
+        display: none !important;
     }}
     [data-testid="stAppViewContainer"] > .main,
     [data-testid="stAppViewContainer"] > .main > div,
@@ -736,6 +723,15 @@ def inject_css() -> None:
     /* ── Sidebar ────────────────────────────────────────── */
     [data-testid="stSidebar"] {{
         background: linear-gradient(180deg, {C['primary']} 0%, #001A5C 100%);
+        display: block !important;
+        visibility: visible !important;
+        transform: none !important;
+        width: 21rem !important;
+        min-width: 21rem !important;
+    }}
+    [data-testid="stSidebar"][aria-expanded="false"] {{
+        transform: translateX(0) !important;
+        display: block !important;
     }}
     [data-testid="stSidebarContent"],
     [data-testid="stSidebarUserContent"] {{
@@ -2974,22 +2970,6 @@ def _render_sidebar_system_info(
 def render_sidebar(df_plant: pd.DataFrame) -> tuple:
     """Render navigation sidebar. Returns (zones, plants, uploaded_file, system_info_slot)."""
     with st.sidebar:
-        # ── Temporary light-theme switcher ──────────────────────────────
-        import streamlit.components.v1 as _sc
-        _sc.html("""
-<button onclick="(function(){
-    try{
-        var ls=window.parent.localStorage;
-        ['stActiveTheme','theme','st_theme','streamlit_theme'].forEach(function(k){ls.removeItem(k);});
-        window.parent.location.href=window.parent.location.pathname+'?theme=light';
-    }catch(e){}
-})()" style="width:100%;padding:14px 8px;background:#FF6600;color:#fff;
-border:none;border-radius:10px;font-size:15px;font-weight:900;
-cursor:pointer;letter-spacing:0.05em;margin-bottom:6px;">
-&#9728; CLICK HERE — Switch to White Theme
-</button>""", height=60)
-        # ───────────────────────────────────────────────────────────────
-
         sidebar_logo_html = '<div style="font-size:2.6rem;">&#9981;</div>'
         try:
             if os.path.exists(SIDE_PANEL_LOGO_PATH):
