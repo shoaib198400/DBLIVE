@@ -2662,7 +2662,6 @@ def render_header(subtitle: str = "") -> None:
                                  Uses Master Logo.jpg if available, then Title.png, then pure-CSS.
       2. Dark-blue info strip: app title, subtitle, date/time.
     """
-    now  = datetime.now().strftime("%d %b %Y  |  %I:%M %p")
     subtitle_html = f'<p class="dash-header-sub">{subtitle}</p>' if subtitle else ""
 
     # ── Part 1: Full-width brand banner ─────────────────────────────────────
@@ -2706,9 +2705,6 @@ def render_header(subtitle: str = "") -> None:
         '<div class="dash-header-main">'
         '<p class="dash-header-title">SOD Exception Dashboard</p>'
         f'{subtitle_html}'
-        '</div>'
-        '<div class="dash-header-meta">'
-        f'<div style="margin-top:4px;font-size:18px;">{now}</div>'
         '</div>'
         '</div>'
         '</div>'
@@ -3579,38 +3575,30 @@ def render_dashboard(
             color_class = color_cls,
             key = "tile_pending_dc",
         )
-        st.write(f"[DEBUG] Pending DC Clicked: {clicked_dc}")
         if clicked_dc:
             st.session_state["page"] = "pending_dc_details"
-            st.write(f"[DEBUG] Set page to: {st.session_state['page']}")
             st.rerun()
 
     with col2:
         s_df = open_delivery_result_filtered.get("summary_df", pd.DataFrame())
         total_deliveries = int(s_df["Open Delivery Count"].sum()) if not s_df.empty and "Open Delivery Count" in s_df.columns else 0
         clicked_open = render_open_delivery_tile({**open_delivery_result_filtered, "total_count": total_deliveries})
-        st.write(f"[DEBUG] Open Delivery Clicked: {clicked_open}")
         if clicked_open:
             st.session_state["page"] = "open_delivery_details"
-            st.write(f"[DEBUG] Set page to: {st.session_state['page']}")
             st.rerun()
     with col3:
         s_df = pending_invoices_result_filtered.get("summary_df", pd.DataFrame())
         total_invoices = int(s_df["Pending Invoice Count"].sum()) if not s_df.empty and "Pending Invoice Count" in s_df.columns else 0
         clicked_pending_inv = render_pending_invoices_tile({**pending_invoices_result_filtered, "total_count": total_invoices})
-        st.write(f"[DEBUG] Pending Invoices Clicked: {clicked_pending_inv}")
         if clicked_pending_inv:
             st.session_state["page"] = "pending_invoices_details"
-            st.write(f"[DEBUG] Set page to: {st.session_state['page']}")
             st.rerun()
     with col4:
         s_df = open_sales_orders_result_filtered.get("summary_df", pd.DataFrame())
         total_so = int(s_df["Open Sales Order Count"].sum()) if not s_df.empty and "Open Sales Order Count" in s_df.columns else 0
         clicked_open_so = render_open_sales_orders_tile({**open_sales_orders_result_filtered, "total_count": total_so})
-        st.write(f"[DEBUG] Open Sales Orders Clicked: {clicked_open_so}")
         if clicked_open_so:
             st.session_state["page"] = "open_sales_orders_details"
-            st.write(f"[DEBUG] Set page to: {st.session_state['page']}")
             st.rerun()
 
     st.markdown("<div style='height:14px'></div>", unsafe_allow_html=True)
@@ -3621,37 +3609,29 @@ def render_dashboard(
         s_df = open_intransit_result_filtered.get("summary_df", pd.DataFrame())
         total_intransit = int(s_df["Open In-Transit STO Count"].sum()) if not s_df.empty and "Open In-Transit STO Count" in s_df.columns else 0
         clicked_intransit = render_open_intransit_tile({**open_intransit_result_filtered, "total_count": total_intransit})
-        st.write(f"[DEBUG] Open Intransit Clicked: {clicked_intransit}")
         if clicked_intransit:
             st.session_state["page"] = "open_intransit_details"
-            st.write(f"[DEBUG] Set page to: {st.session_state['page']}")
             st.rerun()
     with col6:
         s_df = open_short_sales_result_filtered.get("summary_df", pd.DataFrame())
         total_short_sales = int(s_df["Total Shortage Quantity (in Ltrs)"].sum()) if not s_df.empty and "Total Shortage Quantity (in Ltrs)" in s_df.columns else 0
         clicked_short_sales = render_open_shortages_sales_tile({**open_short_sales_result_filtered, "total_count": total_short_sales})
-        st.write(f"[DEBUG] Open Short Sales Clicked: {clicked_short_sales}")
         if clicked_short_sales:
             st.session_state["page"] = "open_shortages_sales_details"
-            st.write(f"[DEBUG] Set page to: {st.session_state['page']}")
             st.rerun()
     with col7:
         s_df = open_short_sto_result_filtered.get("summary_df", pd.DataFrame())
         total_short_sto = int(s_df["Total STO Shortage Quantity (in Ltrs)"].sum()) if not s_df.empty and "Total STO Shortage Quantity (in Ltrs)" in s_df.columns else 0
         clicked_short_sto = render_open_shortages_sto_tile({**open_short_sto_result_filtered, "total_count": total_short_sto})
-        st.write(f"[DEBUG] Open Short STO Clicked: {clicked_short_sto}")
         if clicked_short_sto:
             st.session_state["page"] = "open_shortages_sto_details"
-            st.write(f"[DEBUG] Set page to: {st.session_state['page']}")
             st.rerun()
     with col8:
         s_df = tank_reco_result_filtered.get("summary_df", pd.DataFrame())
         total_tank_reco = int(s_df["Tank Reco Count"].sum()) if not s_df.empty and "Tank Reco Count" in s_df.columns else 0
         clicked_tank = render_tank_reco_tile({**tank_reco_result_filtered, "total_count": total_tank_reco})
-        st.write(f"[DEBUG] Tank Reco Clicked: {clicked_tank}")
         if clicked_tank:
             st.session_state["page"] = "tank_reco_details"
-            st.write(f"[DEBUG] Set page to: {st.session_state['page']}")
             st.rerun()
 
     st.markdown("<div style='height:10px'></div>", unsafe_allow_html=True)
@@ -3667,7 +3647,6 @@ def render_dashboard(
             color_class="c-success" if total_pl_unblock_qty > 0 else "c-muted",
             key="pl_unblock_btn",
         )
-        st.write(f"[DEBUG] PL Unblock Clicked: {clicked_pl_unblock}")
         if clicked_pl_unblock:
             st.session_state["dummy_tank_clicked"] = False
             st.session_state["selected_tile"] = None
@@ -3684,7 +3663,6 @@ def render_dashboard(
             color_class="c-success" if total_dummy_qty > 0 else "c-muted",
             key="dummy_tank_btn",
         )
-        st.write(f"[DEBUG] Dummy Tank Clicked: {clicked_dummy_tank}")
         if clicked_dummy_tank:
             st.session_state["pl_unblock_clicked"] = False
             st.session_state["selected_tile"] = None
@@ -3718,7 +3696,6 @@ def render_dashboard(
             color_class="c-success" if kpi_location_visit > 0 else "c-muted",
             key="location_visit_btn"
         )
-        st.write(f"[DEBUG] Location Visit Clicked: {clicked_location_visit}")
         if clicked_location_visit:
             st.session_state["pl_unblock_clicked"] = False
             st.session_state["dummy_tank_clicked"] = False
@@ -6714,7 +6691,23 @@ def main() -> None:
   var BG2 = '#F0F2F6';
   var TX  = '#262730';
 
+  function forceSidebar() {
+    try {
+      var doc = window.parent.document;
+      var sb = doc.querySelector('[data-testid="stSidebar"]');
+      if (sb) {
+        sb.style.setProperty('display',     'block',   'important');
+        sb.style.setProperty('visibility',  'visible', 'important');
+        sb.style.setProperty('transform',   'none',    'important');
+        sb.style.setProperty('min-width',   '336px',   'important');
+        sb.style.setProperty('width',       '336px',   'important');
+        sb.setAttribute('aria-expanded', 'true');
+      }
+    } catch(e) {}
+  }
+
   function applyLight() {
+    forceSidebar();
     try {
       var doc = window.parent.document;
       // Force body & root
