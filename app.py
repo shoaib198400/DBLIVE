@@ -669,30 +669,43 @@ def inject_css() -> None:
         top: 0;
         z-index: 1;
         background: linear-gradient(135deg, {C['primary']} 0%, {C['secondary']} 100%);
-        color: white;
-        font-size: 22px;
-        font-weight: 800;
+        color: #FFFFFF;
+        font-size: 15px;
+        font-weight: 700;
         text-align: center;
-        padding: 16px 18px;
-        border-bottom: 2px solid #D5E2F3;
+        padding: 13px 16px;
+        border-bottom: 3px solid #FFD700;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+        white-space: nowrap;
+    }}
+    .pro-table thead th:first-child {{
+        border-radius: 0;
+        text-align: left;
     }}
     .pro-table tbody td {{
-        font-size: 21px;
-        font-weight: 600;
+        font-size: 14px;
+        font-weight: 500;
         color: #1B3552;
         text-align: center;
-        padding: 16px 18px;
+        padding: 11px 16px;
         border-bottom: 1px solid #E2EAF4;
         word-wrap: break-word;
+    }}
+    .pro-table tbody td:first-child {{
+        text-align: left;
+        font-weight: 600;
+        color: #003087;
     }}
     .pro-table tbody tr:nth-child(odd) {{
         background: #FFFFFF;
     }}
     .pro-table tbody tr:nth-child(even) {{
-        background: #F7FAFE;
+        background: #F4F8FF;
     }}
     .pro-table tbody tr:hover {{
-        background: #EAF2FF;
+        background: #DCF0FF;
+        transition: background 0.15s ease;
     }}
     .streamlit-expanderHeader {{
         font-size: 20px !important;
@@ -837,6 +850,60 @@ def inject_css() -> None:
         margin: 0;
     }}
 
+    /* ── Sidebar multiselect — glass-card style ─────────── */
+    [data-testid="stSidebar"] [data-baseweb="select"] {{
+        background: rgba(255,255,255,0.10) !important;
+        border: 1px solid rgba(255,255,255,0.20) !important;
+        border-radius: 10px !important;
+        transition: border-color 0.2s ease, background 0.2s ease !important;
+    }}
+    [data-testid="stSidebar"] [data-baseweb="select"]:hover {{
+        background: rgba(255,255,255,0.16) !important;
+        border-color: rgba(255,255,255,0.38) !important;
+    }}
+    [data-testid="stSidebar"] [data-baseweb="select"] > div {{
+        background: transparent !important;
+        color: #FFFFFF !important;
+        font-size: 13px !important;
+        border: none !important;
+    }}
+    [data-testid="stSidebar"] [data-baseweb="tag"] {{
+        background: rgba(255,200,50,0.22) !important;
+        border: 1px solid rgba(255,200,50,0.45) !important;
+        border-radius: 20px !important;
+        color: #FFE066 !important;
+        font-size: 12px !important;
+    }}
+    /* Sidebar buttons — glass-card nav style */
+    [data-testid="stSidebar"] [data-testid="stButton"] > button {{
+        width: calc(100% - 8px) !important;
+        display: flex !important;
+        align-items: center !important;
+        justify-content: flex-start !important;
+        background: rgba(255,255,255,0.07) !important;
+        color: #FFFFFF !important;
+        border: 1px solid rgba(255,255,255,0.12) !important;
+        border-radius: 10px !important;
+        margin: 3px 4px !important;
+        padding: 10px 14px !important;
+        font-size: 13px !important;
+        font-weight: 500 !important;
+        letter-spacing: 0.02em !important;
+        box-shadow: none !important;
+        transition: background 0.18s ease, transform 0.12s ease, border-color 0.18s ease, box-shadow 0.18s ease !important;
+    }}
+    [data-testid="stSidebar"] [data-testid="stButton"] > button:hover {{
+        background: rgba(255,255,255,0.16) !important;
+        border-color: rgba(255,255,255,0.28) !important;
+        transform: translateX(3px) !important;
+        box-shadow: 0 3px 10px rgba(0,0,0,0.22) !important;
+        color: #FFFFFF !important;
+    }}
+    [data-testid="stSidebar"] [data-testid="stButton"] > button:active {{
+        transform: translateX(1px) !important;
+        box-shadow: 0 1px 4px rgba(0,0,0,0.18) !important;
+    }}
+
     /* ── Filter Badges ──────────────────────────────────── */
     .fbadge {{
         display: inline-block;
@@ -911,14 +978,25 @@ def inject_css() -> None:
         font-size: 15px !important;
     }}
 
-    /* ── Larger fonts for Streamlit dataframe tables used in drill-down pages ── */
-    [data-testid="stDataFrame"] th {{
-        font-size: 18px !important;
+    /* ── Streamlit dataframe tables (drill-down pages) ── */
+    [data-testid="stDataFrame"] [role="columnheader"] {{
+        background: linear-gradient(135deg, {C['primary']} 0%, {C['secondary']} 100%) !important;
+        color: #FFFFFF !important;
+        font-size: 13px !important;
         font-weight: 700 !important;
+        text-transform: uppercase !important;
+        letter-spacing: 0.04em !important;
+        border-bottom: 2px solid #FFD700 !important;
     }}
-    [data-testid="stDataFrame"] td {{
-        font-size: 17px !important;
-        font-weight: 600 !important;
+    [data-testid="stDataFrame"] [role="gridcell"] {{
+        font-size: 13px !important;
+        font-weight: 500 !important;
+        color: #1B3552 !important;
+    }}
+    [data-testid="stDataFrame"] {{
+        border-radius: 10px !important;
+        overflow: hidden !important;
+        border: 1px solid #D5E2F3 !important;
     }}
     </style>
     """, unsafe_allow_html=True)
@@ -3735,7 +3813,7 @@ def render_dashboard(
     zone_summary_df = _build_zone_exception_summary(all_exception_plant_df)
     # Ensure consistent column order
     metric_cols = [
-        "Total Exceptions", "Pending DC", "Open Delivery", "Open In-Transit", "Open Sales Order", "Pending Invoice", "Tank Reco", "Shortage Sales (Billing Docs)", "Shortage STO (Billing Docs)"
+        "Total Exceptions", "Pending DC", "Open Delivery", "Open In-Transit", "Open Sales Order", "Pending Invoice", "Shortage Sales (Billing Docs)", "Shortage STO (Billing Docs)"
     ]
     zone_cols = [c for c in ["Zone Name", "Locations"] + metric_cols if c in zone_summary_df.columns]
     if zone_summary_df is not None and not zone_summary_df.empty:
@@ -3751,6 +3829,9 @@ def render_dashboard(
     else:
         st.info("No locationwise exception data available.")
 
+    # ── Mail Center ──────────────────────────────────────────────────────────
+    _render_mail_center(all_exception_plant_df)
+
     # ── Unmatched plant warning ───────────────────────────────────────────────
     unmatched = pending_dc_result.get("unmatched", [])
     if unmatched:
@@ -3763,6 +3844,152 @@ def render_dashboard(
                 "PlantMaster. Update PlantMaster or check the data.\n\n"
                 + "  |  ".join(str(c) for c in unmatched)
             )
+
+
+def _render_mail_center(all_exception_plant_df: pd.DataFrame) -> None:
+    """Mail Center — compose and send zone exception alerts via Outlook."""
+    import emails as _em
+    import streamlit.components.v1 as _stc
+
+    avail, avail_reason = _em.outlook_available()
+
+    st.markdown(
+        "<div class='sec-title'>&#9993; Mail Center — Send Exception Alerts</div>",
+        unsafe_allow_html=True,
+    )
+
+    if not avail:
+        st.info(
+            f"&#8505;&#65039; **Mail is only available when running the app locally on Windows with Outlook open.**\n\n"
+            f"Reason: {avail_reason}"
+        )
+        return
+
+    if all_exception_plant_df is None or all_exception_plant_df.empty:
+        st.warning("No exception data loaded — cannot compose mails.")
+        return
+
+    with st.expander("&#9993; Compose & Send Exception Mails", expanded=False):
+
+        col_a, col_b = st.columns([2, 1])
+
+        with col_a:
+            # Zone selector
+            available_zones = sorted(
+                all_exception_plant_df["Zone Name"].dropna().unique().tolist()
+            )
+            selected_zones_mail = st.multiselect(
+                "Select Zones to mail",
+                options=available_zones,
+                default=available_zones,
+                key="mail_zone_select",
+                help="One email per zone will be generated.",
+            )
+
+        with col_b:
+            # Test mode toggle
+            test_mode = st.checkbox("&#128300; Test Mode", value=True, key="mail_test_mode",
+                                    help="In test mode, mail goes only to the test email — not to zone recipients.")
+            if test_mode:
+                test_email = st.text_input("Test email address", value=_em.SENDER_EMAIL,
+                                           key="mail_test_email")
+            else:
+                test_email = ""
+
+        # Exception type checkboxes
+        st.markdown("**Select exception types to include in mail:**")
+        exc_options = list(_em.EXCEPTION_LABELS.keys())
+        exc_cols_ui = st.columns(len(exc_options))
+        selected_exceptions = []
+        for i, exc in enumerate(exc_options):
+            with exc_cols_ui[i]:
+                if st.checkbox(_em.EXCEPTION_LABELS[exc], value=True, key=f"mail_exc_{exc}"):
+                    selected_exceptions.append(exc)
+
+        # Custom intro text
+        custom_intro = st.text_area(
+            "Custom intro paragraph (optional — leave blank for default text)",
+            value="",
+            height=80,
+            key="mail_custom_intro",
+        )
+
+        as_of_date = datetime.now().strftime("%d %b %Y")
+
+        # Preview section
+        if selected_zones_mail:
+            preview_zone = st.selectbox(
+                "Preview mail for zone:",
+                options=selected_zones_mail,
+                key="mail_preview_zone",
+            )
+            contacts = _em.ZONE_EMAIL_MAP.get(preview_zone, {})
+
+            # Show sender / recipient info
+            st.markdown("---")
+            info_col1, info_col2, info_col3 = st.columns(3)
+            with info_col1:
+                st.markdown(f"**&#128228; From:** `{_em.SENDER_EMAIL}`")
+            with info_col2:
+                if test_mode:
+                    st.markdown(f"**&#128229; To (TEST):** `{test_email or _em.SENDER_EMAIL}`")
+                else:
+                    st.markdown(f"**&#128229; To:** `{contacts.get('to', 'Not configured')}`")
+                    st.markdown(f"**CC:** `{contacts.get('cc', '')}`")
+            with info_col3:
+                if not test_mode:
+                    st.markdown(f"**BCC:** `{', '.join(_em.BCC_EMAILS)}`")
+                st.markdown(f"**&#128197; As of:** `{as_of_date}`")
+
+            # HTML preview
+            zone_df_preview = all_exception_plant_df[
+                all_exception_plant_df["Zone Name"] == preview_zone
+            ].copy()
+            preview_html = _em.build_exception_email_html(
+                preview_zone, as_of_date, zone_df_preview, selected_exceptions, custom_intro
+            )
+            st.markdown("**Mail body preview:**")
+            _stc.html(preview_html, height=500, scrolling=True)
+
+        st.markdown("---")
+
+        # Send button
+        send_label = (
+            f"&#128300; Send TEST mail to {test_email or _em.SENDER_EMAIL}"
+            if test_mode
+            else f"&#9993; Send to {len(selected_zones_mail)} zone(s)"
+        )
+        if st.button(send_label, key="mail_send_btn", type="primary"):
+            if not selected_zones_mail:
+                st.warning("Select at least one zone.")
+            elif not selected_exceptions:
+                st.warning("Select at least one exception type.")
+            else:
+                results = []
+                prog = st.progress(0, text="Sending mails…")
+                for idx, zone in enumerate(selected_zones_mail):
+                    result = _em.send_exception_mail_for_zone(
+                        zone_name=zone,
+                        all_exception_plant_df=all_exception_plant_df,
+                        selected_exceptions=selected_exceptions,
+                        as_of_date=as_of_date,
+                        custom_intro=custom_intro,
+                        test_mode=test_mode,
+                        test_email=test_email,
+                    )
+                    results.append((zone, result))
+                    prog.progress((idx + 1) / len(selected_zones_mail),
+                                  text=f"Sent {idx+1}/{len(selected_zones_mail)}: {zone}")
+
+                prog.empty()
+                ok_count   = sum(1 for _, r in results if r.get("ok"))
+                fail_count = len(results) - ok_count
+                if ok_count:
+                    st.success(f"&#9989; {ok_count} mail(s) sent successfully.")
+                if fail_count:
+                    for zone, r in results:
+                        if not r.get("ok"):
+                            st.error(f"&#10060; {zone}: {r.get('msg', 'Unknown error')}")
 
 
 def _build_exception_kpi_chart_df(
@@ -3998,7 +4225,6 @@ def _build_all_exception_plant_summary(
         "Open In-Transit",
         "Open Sales Order",
         "Pending Invoice",
-        "Tank Reco",
         "Shortage Sales (Billing Docs)",
         "Shortage STO (Billing Docs)",
     ]
@@ -4009,7 +4235,6 @@ def _build_all_exception_plant_summary(
         _extract_zone_plant_metric(open_intransit_result.get("summary_df", pd.DataFrame()), "Open In-Transit STO Count", "Open In-Transit"),
         _extract_zone_plant_metric(open_sales_orders_result.get("summary_df", pd.DataFrame()), "Open Sales Order Count", "Open Sales Order"),
         _extract_zone_plant_metric(pending_invoices_result.get("summary_df", pd.DataFrame()), "Pending Invoice Count", "Pending Invoice"),
-        _extract_zone_plant_metric(tank_reco_result.get("summary_df", pd.DataFrame()), "Tank Reco Count", "Tank Reco"),
         _extract_shortage_billing_counts(open_short_sales_result.get("detail_df", pd.DataFrame()), "Shortage Sales (Billing Docs)"),
         _extract_shortage_billing_counts(open_short_sto_result.get("detail_df", pd.DataFrame()), "Shortage STO (Billing Docs)"),
     ]
