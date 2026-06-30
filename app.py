@@ -3121,6 +3121,13 @@ def render_sidebar(df_plant: pd.DataFrame) -> tuple:
 
         st.markdown("<hr/>", unsafe_allow_html=True)
 
+        if st.button("&#9993; Send Exception Mails", width='stretch',
+                     key="btn_open_mail_center"):
+            st.session_state["open_mail_center"] = True
+            st.rerun()
+
+        st.markdown("<hr/>", unsafe_allow_html=True)
+
         st.markdown('<p class="sb-nav-lbl">&#128194; Data Upload</p>',
                     unsafe_allow_html=True)
         unique_uploader_key = f"uploader_pending_dc_{uuid.uuid4()}"
@@ -3853,6 +3860,8 @@ def _render_mail_center(all_exception_plant_df: pd.DataFrame) -> None:
 
     avail, avail_reason = _em.outlook_available()
 
+    # Anchor so the sidebar button can jump here via JS scroll
+    st.markdown('<div id="mail-center-anchor"></div>', unsafe_allow_html=True)
     st.markdown(
         "<div class='sec-title'>&#9993; Mail Center — Send Exception Alerts</div>",
         unsafe_allow_html=True,
@@ -3860,8 +3869,8 @@ def _render_mail_center(all_exception_plant_df: pd.DataFrame) -> None:
 
     if not avail:
         st.info(
-            f"&#8505;&#65039; **Mail is only available when running the app locally on Windows with Outlook open.**\n\n"
-            f"Reason: {avail_reason}"
+            f"&#8505;&#65039; **Mail is only available when running the app locally on Windows "
+            f"with Outlook open.**\n\nReason: {avail_reason}"
         )
         return
 
@@ -3869,7 +3878,12 @@ def _render_mail_center(all_exception_plant_df: pd.DataFrame) -> None:
         st.warning("No exception data loaded — cannot compose mails.")
         return
 
-    with st.expander("&#9993; Compose & Send Exception Mails", expanded=False):
+    # Auto-expand when triggered from sidebar button
+    auto_open = bool(st.session_state.get("open_mail_center", False))
+    if auto_open:
+        st.session_state["open_mail_center"] = False   # reset flag
+
+    with st.expander("&#9993; Compose & Send Exception Mails", expanded=auto_open):
 
         col_a, col_b = st.columns([2, 1])
 
@@ -6899,6 +6913,8 @@ def main() -> None:
         st.session_state["location_visit_page"] = "main"
     if "tank_turns_page" not in st.session_state:
         st.session_state["tank_turns_page"] = "main"
+    if "open_mail_center" not in st.session_state:
+        st.session_state["open_mail_center"] = False
 
     inject_css()
 
