@@ -465,9 +465,9 @@ def inject_css() -> None:
     }}
     .main .block-container {{
         padding-top: 0 !important;
-        padding-bottom: 1.5rem;
-        padding-left: 1rem !important;
-        padding-right: 1rem !important;
+        padding-bottom: 1rem;
+        padding-left: 0.75rem !important;
+        padding-right: 0.75rem !important;
         max-width: 100%;
     }}
     .main .block-container > div:first-child {{
@@ -485,7 +485,7 @@ def inject_css() -> None:
     .hpcl-banner-wrap {{
         margin: 0 -1rem !important;
         width: calc(100% + 2rem);
-        height: 192px;
+        height: 110px;
         line-height: 0;
         overflow: hidden;
         position: relative;
@@ -508,128 +508,83 @@ def inject_css() -> None:
     .dash-header {{
         background: linear-gradient(135deg, {C['primary']} 0%, {C['secondary']} 100%);
         color: white;
-        padding: 14px 28px;
-        margin: 0 -1rem 20px -1rem;
+        padding: 8px 20px;
+        margin: 0 -1rem 14px -1rem;
         display: flex;
         align-items: center;
         justify-content: center;
         position: relative;
-        box-shadow: 0 4px 16px rgba(0,48,135,0.35);
+        box-shadow: 0 3px 10px rgba(0,48,135,0.28);
     }}
     .dash-header-main {{
         width: 100%;
         text-align: center;
     }}
     .dash-header-title {{
-        font-size: 40px !important;
+        font-size: 22px !important;
         font-weight: 800;
         letter-spacing: 0.02em;
         margin: 0;
-        line-height: 1.15;
+        line-height: 1.2;
     }}
     .dash-header-sub {{
-        font-size: 18px;
+        font-size: 13px;
         opacity: 0.88;
-        margin: 6px 0 0 0;
-    }}
-    .dash-header-meta {{
-        position: absolute;
-        right: 28px;
-        top: 50%;
-        transform: translateY(-50%);
-        text-align: right;
-        font-size: 18px;
-        opacity: 0.90;
-        line-height: 1.65;
-    }}
-    @media (max-width: 1100px) {{
-        .dash-header {{
-            align-items: flex-start;
-            justify-content: flex-start;
-            gap: 12px;
-            flex-wrap: wrap;
-        }}
-        .dash-header-main {{
-            text-align: center;
-        }}
-        .dash-header-title {{
-            font-size: 32px !important;
-        }}
-        .dash-header-meta {{
-            position: static;
-            transform: none;
-            width: 100%;
-            text-align: center;
-        }}
-    }}
-    @media (max-width: 700px) {{
-        .dash-header {{
-            padding: 12px 18px;
-        }}
-        .dash-header-title {{
-            font-size: 26px !important;
-        }}
-        .dash-header-sub {{
-            font-size: 16px;
-        }}
-        .dash-header-meta {{
-            font-size: 15px;
-        }}
+        margin: 3px 0 0 0;
     }}
 
     /* ── KPI Cards ─────────────────────────────────────── */
     .kpi-wrap {{
         background: {C['white']};
-        border-radius: 12px;
-        padding: 18px 20px 14px 20px;
-        border-left: 5px solid {C['primary']};
-        box-shadow: 0 2px 12px {C['shadow']};
+        border-radius: 10px;
+        padding: 11px 14px 10px 14px;
+        border-left: 4px solid {C['primary']};
+        box-shadow: 0 2px 8px {C['shadow']};
         position: relative;
         overflow: hidden;
         transition: transform 0.18s ease, box-shadow 0.18s ease;
-        min-height: 130px;
+        min-height: 90px;
     }}
     .kpi-wrap:hover {{
-        transform: translateY(-3px);
-        box-shadow: 0 8px 22px rgba(0,48,135,0.22);
+        transform: translateY(-2px);
+        box-shadow: 0 6px 16px rgba(0,48,135,0.18);
     }}
     .kpi-wrap::after {{
         content: '';
         position: absolute;
         top: 0; right: 0;
-        width: 60px; height: 60px;
+        width: 44px; height: 44px;
         background: {C['light_blue']};
-        border-radius: 0 12px 0 60px;
+        border-radius: 0 10px 0 44px;
     }}
     .kpi-icon {{
         position: absolute;
-        top: 14px; right: 16px;
-        font-size: 1.7rem;
+        top: 10px; right: 12px;
+        font-size: 1.2rem;
         opacity: 0.55;
         z-index: 1;
     }}
     .kpi-label {{
-        font-size: 20px;
+        font-size: 11px;
         font-weight: 800;
         color: #46515F;
         text-transform: uppercase;
-        letter-spacing: 0.08em;
-        margin-bottom: 8px;
+        letter-spacing: 0.07em;
+        margin-bottom: 5px;
         line-height: 1.25;
-        text-shadow: 0 0 0 rgba(0,0,0,0.01);
     }}
     .kpi-value {{
-        font-size: 2.6rem;
+        font-size: 1.55rem;
         font-weight: 800;
         color: {C['primary']};
         line-height: 1;
-        margin-bottom: 6px;
+        margin-bottom: 4px;
     }}
     .kpi-detail {{
-        font-size: 19px;
-        font-weight: 700;
+        font-size: 11px;
+        font-weight: 600;
         color: #24405A;
-        line-height: 1.35;
+        line-height: 1.3;
     }}
     .kpi-wrap.c-danger  {{ border-left-color: {C['danger']};   }}
     .kpi-wrap.c-warning {{ border-left-color: {C['warning']};  }}
@@ -641,14 +596,14 @@ def inject_css() -> None:
     .kpi-wrap.c-muted .kpi-icon   {{ opacity: 0.30; }}
     .kpi-wrap.c-muted .kpi-detail {{ opacity: 0.75; color: #6B7A8D; }}
 
-    /* ── Section Titles (≥ 20 px) ────────────────────────── */
+    /* ── Section Titles ──────────────────────────────────── */
     .sec-title {{
-        font-size: 22px;
+        font-size: 15px;
         font-weight: 700;
         color: {C['primary']};
-        padding: 8px 0 6px 0;
+        padding: 5px 0 4px 0;
         border-bottom: 2px solid {C['light_blue']};
-        margin: 10px 0 16px 0;
+        margin: 8px 0 10px 0;
     }}
     .pro-table-wrap {{
         max-height: 520px;
@@ -739,8 +694,8 @@ def inject_css() -> None:
         display: block !important;
         visibility: visible !important;
         transform: none !important;
-        width: 21rem !important;
-        min-width: 21rem !important;
+        width: 16rem !important;
+        min-width: 16rem !important;
     }}
     [data-testid="stSidebar"][aria-expanded="false"] {{
         transform: translateX(0) !important;
@@ -761,7 +716,7 @@ def inject_css() -> None:
     }}
     .sidebar-branding {{
         text-align: center;
-        padding: 0 0 6px 0 !important;
+        padding: 0 0 4px 0 !important;
         margin-top: calc(-1 * var(--hpcl-sidebar-top-shift)) !important;
         position: relative;
         z-index: 2;
@@ -780,11 +735,11 @@ def inject_css() -> None:
     [data-testid="stSidebar"] div,
     [data-testid="stSidebar"] label {{
         color: #DDEAFF !important;
-        font-size: 15px !important;
+        font-size: 12px !important;
     }}
     [data-testid="stSidebar"] .stMultiSelect label {{
         color: #FFFFFF !important;
-        font-size: 14px !important;
+        font-size: 11px !important;
         font-weight: 800;
         text-transform: uppercase;
         letter-spacing: 0.07em;
@@ -824,11 +779,11 @@ def inject_css() -> None:
         border-color: rgba(255,255,255,0.18) !important;
     }}
     .sb-nav-lbl {{
-        font-size: 13px !important;
+        font-size: 10px !important;
         letter-spacing: 0.12em;
         text-transform: uppercase;
         color: #7AABF0 !important;
-        margin: 14px 0 6px 0;
+        margin: 10px 0 4px 0;
     }}
     .sb-critical-box {{
         background: linear-gradient(180deg, rgba(255,255,255,0.12), rgba(255,255,255,0.05));
@@ -921,10 +876,10 @@ def inject_css() -> None:
         background: {C['primary']};
         color: white;
         border: none;
-        border-radius: 7px;
-        padding: 8px 22px;
+        border-radius: 6px;
+        padding: 5px 14px;
         font-weight: 600;
-        font-size: 15px;
+        font-size: 12px;
         transition: background 0.2s;
     }}
     div.stButton > button:hover {{
@@ -936,9 +891,9 @@ def inject_css() -> None:
         background: {C['accent']};
         color: white;
         border: none;
-        border-radius: 7px;
+        border-radius: 6px;
         font-weight: 600;
-        font-size: 15px;
+        font-size: 12px;
     }}
     div[data-testid="stDownloadButton"] > button:hover {{
         background: #E05500;
@@ -6940,8 +6895,8 @@ def main() -> None:
         sb.style.setProperty('display',     'block',   'important');
         sb.style.setProperty('visibility',  'visible', 'important');
         sb.style.setProperty('transform',   'none',    'important');
-        sb.style.setProperty('min-width',   '336px',   'important');
-        sb.style.setProperty('width',       '336px',   'important');
+        sb.style.setProperty('min-width',   '256px',   'important');
+        sb.style.setProperty('width',       '256px',   'important');
         sb.setAttribute('aria-expanded', 'true');
       }
     } catch(e) {}
