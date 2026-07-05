@@ -1,0 +1,27 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+
+# Streamlit local cache
+.streamlit/secrets.toml
+
+# Local-only pages (not pushed to GitHub)
+pages/
+
+# Temp / editor files
+*.tmp
+*.bak
+.DS_Store
+Thumbs.db
+
+# Word/doc temp files
+~$*.docx
+~$*.xlsx
+~$*.xls
+
+# Jupyter
+.ipynb_checkpoints/
