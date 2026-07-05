@@ -3792,7 +3792,16 @@ def render_dashboard(
         st.info("No locationwise exception data available.")
 
     # ── Mail Center ──────────────────────────────────────────────────────────
-    _render_mail_center(all_exception_plant_df)
+    _detail_dfs_for_mail = {
+        "Pending DC":                    pending_dc_result.get("detail_df",          pd.DataFrame()),
+        "Open Delivery":                 open_delivery_result.get("detail_df",       pd.DataFrame()),
+        "Open In-Transit":               open_intransit_result.get("detail_df",      pd.DataFrame()),
+        "Open Sales Order":              open_sales_orders_result.get("detail_df",   pd.DataFrame()),
+        "Pending Invoice":               pending_invoices_result.get("detail_df",    pd.DataFrame()),
+        "Shortage Sales (Billing Docs)": open_short_sales_result.get("detail_df",   pd.DataFrame()),
+        "Shortage STO (Billing Docs)":   open_short_sto_result.get("detail_df",     pd.DataFrame()),
+    }
+    _render_mail_center(all_exception_plant_df, _detail_dfs_for_mail)
 
     # ── Unmatched plant warning ───────────────────────────────────────────────
     unmatched = pending_dc_result.get("unmatched", [])
@@ -3808,14 +3817,19 @@ def render_dashboard(
             )
 
 
-def _render_mail_center(all_exception_plant_df: pd.DataFrame) -> None:
+def _render_mail_center(
+    all_exception_plant_df: pd.DataFrame,
+    detail_dfs: dict = None,
+) -> None:
     """Mail Center — compose and send zone exception alerts via Outlook."""
     import emails as _em
     import streamlit.components.v1 as _stc
 
+    if detail_dfs is None:
+        detail_dfs = {}
+
     avail, avail_reason = _em.outlook_available()
 
-    # Anchor so the sidebar button can jump here via JS scroll
     st.markdown('<div id="mail-center-anchor"></div>', unsafe_allow_html=True)
     st.markdown(
         "<div class='sec-title'>&#9993; Mail Center — Send Exception Alerts</div>",
@@ -3833,40 +3847,41 @@ def _render_mail_center(all_exception_plant_df: pd.DataFrame) -> None:
         st.warning("No exception data loaded — cannot compose mails.")
         return
 
-    # Auto-expand when triggered from sidebar button
     auto_open = bool(st.session_state.get("open_mail_center", False))
     if auto_open:
-        st.session_state["open_mail_center"] = False   # reset flag
+        st.session_state["open_mail_center"] = False
 
     with st.expander("&#9993; Compose & Send Exception Mails", expanded=auto_open):
 
-        col_a, col_b = st.columns([2, 1])
+        as_of_date = datetime.now().strftime("%d %b %Y")
 
-        with col_a:
-            # Zone selector
+        # ── Row 1: Zone selector + test mode ─────────────────────────────────
+        col_zones, col_mode = st.columns([3, 1])
+        with col_zones:
             available_zones = sorted(
                 all_exception_plant_df["Zone Name"].dropna().unique().tolist()
             )
             selected_zones_mail = st.multiselect(
-                "Select Zones to mail",
+                "Zones to mail  (one email per zone)",
                 options=available_zones,
                 default=available_zones,
                 key="mail_zone_select",
-                help="One email per zone will be generated.",
             )
-
-        with col_b:
-            # Test mode toggle
-            test_mode = st.checkbox("&#128300; Test Mode", value=True, key="mail_test_mode",
-                                    help="In test mode, mail goes only to the test email — not to zone recipients.")
+        with col_mode:
+            test_mode = st.checkbox(
+                "&#128300; Test Mode", value=True, key="mail_test_mode",
+                help="Routes all mail to the test address — no zone recipients contacted.",
+            )
             if test_mode:
-                test_email = st.text_input("Test email address", value=_em.SENDER_EMAIL,
-                                           key="mail_test_email")
+                test_email = st.text_input(
+                    "Test address", value=_em.SENDER_EMAIL, key="mail_test_email",
+                    label_visibility="collapsed",
+                )
             else:
                 test_email = ""
 
-        # Exception type checkboxes
-        st.markdown("**Select exception types to include in mail:**")
+        # ── Row 2: Exception type checkboxes ─────────────────────────────────
+        st.markdown("**Exception types to include** *(each checked type = one Excel attachment)*")
         exc_options = list(_em.EXCEPTION_LABELS.keys())
         exc_cols_ui = st.columns(len(exc_options))
         selected_exceptions = []
@@ -3875,56 +3890,66 @@ def _render_mail_center(all_exception_plant_df: pd.DataFrame) -> None:
                 if st.checkbox(_em.EXCEPTION_LABELS[exc], value=True, key=f"mail_exc_{exc}"):
                     selected_exceptions.append(exc)
 
-        # Custom intro text
+        # ── Row 3: Custom intro ───────────────────────────────────────────────
         custom_intro = st.text_area(
-            "Custom intro paragraph (optional — leave blank for default text)",
-            value="",
-            height=80,
-            key="mail_custom_intro",
+            "Custom intro paragraph (optional)",
+            value="", height=70, key="mail_custom_intro",
         )
 
-        as_of_date = datetime.now().strftime("%d %b %Y")
-
-        # Preview section
-        if selected_zones_mail:
+        # ── Preview zone ──────────────────────────────────────────────────────
+        if selected_zones_mail and selected_exceptions:
+            st.markdown("---")
             preview_zone = st.selectbox(
-                "Preview mail for zone:",
-                options=selected_zones_mail,
+                "Preview mail for zone:", options=selected_zones_mail,
                 key="mail_preview_zone",
             )
             contacts = _em.ZONE_EMAIL_MAP.get(preview_zone, {})
 
-            # Show sender / recipient info
-            st.markdown("---")
-            info_col1, info_col2, info_col3 = st.columns(3)
-            with info_col1:
+            # Sender / Recipient strip
+            r1, r2, r3 = st.columns(3)
+            with r1:
                 st.markdown(f"**&#128228; From:** `{_em.SENDER_EMAIL}`")
-            with info_col2:
+            with r2:
                 if test_mode:
                     st.markdown(f"**&#128229; To (TEST):** `{test_email or _em.SENDER_EMAIL}`")
                 else:
                     st.markdown(f"**&#128229; To:** `{contacts.get('to', 'Not configured')}`")
-                    st.markdown(f"**CC:** `{contacts.get('cc', '')}`")
-            with info_col3:
+                    cc_val = contacts.get('cc', '')
+                    if cc_val:
+                        st.markdown(f"**CC:** `{cc_val}`")
+            with r3:
                 if not test_mode:
-                    st.markdown(f"**BCC:** `{', '.join(_em.BCC_EMAILS)}`")
-                st.markdown(f"**&#128197; As of:** `{as_of_date}`")
+                    st.markdown(f"**BCC:** `{'; '.join(_em.BCC_EMAILS)}`")
+                st.markdown(f"**&#128197; Date:** `{as_of_date}`")
+
+            # Attachments that will be generated
+            preview_attachments = _em.build_zone_excel_attachments(
+                preview_zone, detail_dfs, selected_exceptions
+            )
+            attach_names = [fname for fname, _ in preview_attachments]
+            if attach_names:
+                st.markdown(
+                    "**&#128206; Attachments that will be sent:**  " +
+                    "  |  ".join(f"`{n}`" for n in attach_names)
+                )
+            else:
+                st.warning(f"No data found for '{preview_zone}' with the selected exceptions.")
 
             # HTML preview
             zone_df_preview = all_exception_plant_df[
                 all_exception_plant_df["Zone Name"] == preview_zone
             ].copy()
             preview_html = _em.build_exception_email_html(
-                preview_zone, as_of_date, zone_df_preview, selected_exceptions, custom_intro
+                preview_zone, as_of_date, zone_df_preview,
+                selected_exceptions, custom_intro, attach_names,
             )
             st.markdown("**Mail body preview:**")
-            _stc.html(preview_html, height=500, scrolling=True)
+            _stc.html(preview_html, height=520, scrolling=True)
 
+        # ── Send button ───────────────────────────────────────────────────────
         st.markdown("---")
-
-        # Send button
         send_label = (
-            f"&#128300; Send TEST mail to {test_email or _em.SENDER_EMAIL}"
+            f"&#128300; Send TEST to {test_email or _em.SENDER_EMAIL}"
             if test_mode
             else f"&#9993; Send to {len(selected_zones_mail)} zone(s)"
         )
@@ -3940,6 +3965,7 @@ def _render_mail_center(all_exception_plant_df: pd.DataFrame) -> None:
                     result = _em.send_exception_mail_for_zone(
                         zone_name=zone,
                         all_exception_plant_df=all_exception_plant_df,
+                        detail_dfs=detail_dfs,
                         selected_exceptions=selected_exceptions,
                         as_of_date=as_of_date,
                         custom_intro=custom_intro,
@@ -3947,18 +3973,24 @@ def _render_mail_center(all_exception_plant_df: pd.DataFrame) -> None:
                         test_email=test_email,
                     )
                     results.append((zone, result))
-                    prog.progress((idx + 1) / len(selected_zones_mail),
-                                  text=f"Sent {idx+1}/{len(selected_zones_mail)}: {zone}")
+                    prog.progress(
+                        (idx + 1) / len(selected_zones_mail),
+                        text=f"{idx+1}/{len(selected_zones_mail)}: {zone}",
+                    )
 
                 prog.empty()
-                ok_count   = sum(1 for _, r in results if r.get("ok"))
-                fail_count = len(results) - ok_count
-                if ok_count:
-                    st.success(f"&#9989; {ok_count} mail(s) sent successfully.")
-                if fail_count:
-                    for zone, r in results:
-                        if not r.get("ok"):
-                            st.error(f"&#10060; {zone}: {r.get('msg', 'Unknown error')}")
+                ok_zones   = [(z, r) for z, r in results if r.get("ok")]
+                fail_zones = [(z, r) for z, r in results if not r.get("ok")]
+
+                for zone, r in ok_zones:
+                    attach_list = ", ".join(r.get("attachments", []))
+                    mode_str = "sent" if r.get("mode") == "sent" else "saved to Drafts"
+                    st.success(
+                        f"&#9989; **{zone}** — {mode_str}.  "
+                        f"Attachments: {attach_list or '(none)'}"
+                    )
+                for zone, r in fail_zones:
+                    st.error(f"&#10060; **{zone}**: {r.get('msg', 'Unknown error')}")
 
 
 def _build_exception_kpi_chart_df(
