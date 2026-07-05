@@ -41,7 +41,7 @@ BCC_EMAILS: List[str] = [
 ZONE_EMAIL_MAP: Dict[str, Dict[str, str]] = {
     "Bengaluru Zone":       {"to": "brijeshkumar@hpcl.in",              "cc": "BLR.OND.IC@hpcl.in"},
     "Bhopal Zone":          {"to": "agajare@hpcl.in;twinacore@hpcl.in", "cc": "CZ.OND.IC@hpcl.in"},
-    "Bhubneshwar Zone":     {"to": "smarak.lenka@hpcl.in",              "cc": "ECZ.OND.IC@hpcl.in"},
+    "Bhubaneshwar Zone":    {"to": "smarak.lenka@hpcl.in",              "cc": "ECZ.OND.IC@hpcl.in"},
     "Chandigarh Zone":      {"to": "haroonhamid@hpcl.in",               "cc": "NFZ.OND.IC@hpcl.in"},
     "Cochin Zone":          {"to": "kathir@hpcl.in",                    "cc": "kbanothu@hpcl.in"},
     "East Zone":            {"to": "sray@hpcl.in",                      "cc": "EZ.OND.IC@hpcl.in"},
