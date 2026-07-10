@@ -1569,6 +1569,7 @@ def process_pending_dc(
     df_plant     : pd.DataFrame,
     zone_filter  : list = None,
     plant_filter : list = None,
+    as_of_date   = None,
 ) -> dict:
     """
     Process raw Pending DC data into aggregated exception metrics.
@@ -1594,6 +1595,16 @@ def process_pending_dc(
     if missing:
         st.warning(f"⚠️ Pending DC file is missing expected columns: {missing}")
         return EMPTY
+
+    # As-of-date filter: use first available date column in the source file
+    _dc_date_candidates = ["DOCUMENT DATE", "DISPATCH DATE", "PLANNED GI DATE",
+                           "PLANNED GOODS ISSUE DATE", "SHIPMENT DATE", "DELIVERY DATE"]
+    if as_of_date is not None:
+        _aod = pd.Timestamp(as_of_date)
+        _dc_date_col = next((c for c in _dc_date_candidates if c in df_dc.columns), None)
+        if _dc_date_col:
+            _parsed = pd.to_datetime(df_dc[_dc_date_col], errors="coerce", dayfirst=True)
+            df_dc = df_dc[_parsed.isna() | (_parsed <= _aod)].copy()
 
     dc_unique = df_dc.drop_duplicates(subset=["SENDING PLANT", "SHIPMENT"]).copy()
     dc_unique["SENDING PLANT"] = dc_unique["SENDING PLANT"].astype(str).str.strip()
@@ -1677,6 +1688,7 @@ def process_open_deliveries(
     df_plant     : pd.DataFrame,
     zone_filter  : list = None,
     plant_filter : list = None,
+    as_of_date   = None,
 ) -> dict:
     """
     Process raw Open Delivery data into KPI + drill-down outputs.
@@ -1712,6 +1724,12 @@ def process_open_deliveries(
     work[ship_col]  = work[ship_col].astype(str).str.strip()
     work[deliv_col] = work[deliv_col].astype(str).str.strip()
     work = work[work[deliv_col] != ""]
+
+    # As-of-date filter on GOODS ISSUE DATE
+    if as_of_date is not None and gi_date_col in work.columns:
+        _aod = pd.Timestamp(as_of_date)
+        _parsed = pd.to_datetime(work[gi_date_col], errors="coerce", dayfirst=True)
+        work = work[_parsed.isna() | (_parsed <= _aod)].copy()
 
     # Keep one row per shipping-point + delivery combination for drill-down accuracy.
     detail_base = work.drop_duplicates(subset=[ship_col, deliv_col]).copy()
@@ -1800,6 +1818,7 @@ def process_open_intransit(
     df_plant     : pd.DataFrame,
     zone_filter  : list = None,
     plant_filter : list = None,
+    as_of_date   = None,
 ) -> dict:
     """
     Process Open In-Transit data into KPI + drill-down outputs.
@@ -1842,6 +1861,12 @@ def process_open_intransit(
     work[send_col] = work[send_col].astype(str).str.strip()
     work[sto_col]  = work[sto_col].astype(str).str.strip()
     work = work[work[sto_col] != ""]
+
+    # As-of-date filter on DISPATCH DATE
+    if as_of_date is not None and disp_col in work.columns:
+        _aod = pd.Timestamp(as_of_date)
+        _parsed = pd.to_datetime(work[disp_col], errors="coerce", dayfirst=True)
+        work = work[_parsed.isna() | (_parsed <= _aod)].copy()
 
     dedup_cols = [send_col, sto_col]
     for c in [delivery_col, shipment_col, invoice_col, material_col]:
@@ -1935,6 +1960,7 @@ def process_open_sales_orders(
     df_plant     : pd.DataFrame,
     zone_filter  : list = None,
     plant_filter : list = None,
+    as_of_date   = None,
 ) -> dict:
     """
     Process Open Sales Orders into KPI + drill-down outputs.
@@ -1976,6 +2002,12 @@ def process_open_sales_orders(
     work[ship_col] = work[ship_col].astype(str).str.strip()
     work[so_col]   = work[so_col].astype(str).str.strip()
     work = work[work[so_col] != ""]
+
+    # As-of-date filter on DOCUMENT DATE
+    if as_of_date is not None and doc_date_col in work.columns:
+        _aod = pd.Timestamp(as_of_date)
+        _parsed = pd.to_datetime(work[doc_date_col], errors="coerce", dayfirst=True)
+        work = work[_parsed.isna() | (_parsed <= _aod)].copy()
 
     dedup_cols = [ship_col, so_col]
     for c in [material_col, so_type_col, sold_to_col]:
@@ -2069,6 +2101,7 @@ def process_pending_invoices(
     df_plant    : pd.DataFrame,
     zone_filter : list = None,
     plant_filter: list = None,
+    as_of_date  = None,
 ) -> dict:
     """
     Process Pending Invoices into KPI + drill-down outputs.
@@ -2109,6 +2142,12 @@ def process_pending_invoices(
     work[send_col]     = work[send_col].astype(str).str.strip()
     work[delivery_col] = work[delivery_col].astype(str).str.strip()
     work = work[work[delivery_col] != ""]
+
+    # As-of-date filter on CREATED DATE
+    if as_of_date is not None and created_dt_col in work.columns:
+        _aod = pd.Timestamp(as_of_date)
+        _parsed = pd.to_datetime(work[created_dt_col], errors="coerce", dayfirst=True)
+        work = work[_parsed.isna() | (_parsed <= _aod)].copy()
 
     dedup_cols = [send_col, delivery_col]
     for c in [mat_doc_col, td_ship_col, po_col]:
@@ -2366,6 +2405,7 @@ def process_open_shortages_sales(
     df_plant      : pd.DataFrame,
     zone_filter   : list = None,
     plant_filter  : list = None,
+    as_of_date    = None,
 ) -> dict:
     """
     Process OPEN SHORTAGES - Ltrs (Sales) into KPI + drill-down outputs.
@@ -2418,6 +2458,12 @@ def process_open_shortages_sales(
     work = df_short_sales.copy()
     work[plant_col] = work[plant_col].astype(str).str.strip()
     work = work[work[plant_col] != ""]
+
+    # As-of-date filter on CREATED ON
+    if as_of_date is not None:
+        _aod = pd.Timestamp(as_of_date)
+        _parsed = pd.to_datetime(work[created_on_col], errors="coerce", dayfirst=True)
+        work = work[_parsed.isna() | (_parsed <= _aod)].copy()
 
     # Ensure all critical drill-down columns exist even if source header/value is blank.
     for c in [
@@ -2536,6 +2582,7 @@ def process_open_shortages_sto(
     df_plant     : pd.DataFrame,
     zone_filter  : list = None,
     plant_filter : list = None,
+    as_of_date   = None,
 ) -> dict:
     """
     Process OPEN SHORTAGES - Ltrs (STO) into KPI + drill-down outputs.
@@ -2596,6 +2643,12 @@ def process_open_shortages_sto(
         work[billed_qty_col] = pd.to_numeric(work[billed_qty_col], errors="coerce")
 
     work[created_on_col] = pd.to_datetime(work[created_on_col], errors="coerce", dayfirst=True)
+
+    # As-of-date filter on CREATED ON
+    if as_of_date is not None:
+        _aod = pd.Timestamp(as_of_date)
+        work = work[work[created_on_col].isna() | (work[created_on_col] <= _aod)].copy()
+
     today = pd.Timestamp(datetime.now().date())
     work["SHORTAGE AGE (DAYS)"] = (today - work[created_on_col]).dt.days
     work.loc[work["SHORTAGE AGE (DAYS)"] < 0, "SHORTAGE AGE (DAYS)"] = pd.NA
@@ -2997,7 +3050,7 @@ def _render_sidebar_system_info(
     system_info_slot.markdown(info_html, unsafe_allow_html=True)
 
 def render_sidebar(df_plant: pd.DataFrame) -> tuple:
-    """Render navigation sidebar. Returns (zones, plants, uploaded_file, system_info_slot)."""
+    """Render navigation sidebar. Returns (zones, plants, uploaded_file, system_info_slot, as_of_date)."""
     with st.sidebar:
         sidebar_logo_html = '<div style="font-size:2.6rem;">&#9981;</div>'
         try:
@@ -3055,6 +3108,19 @@ def render_sidebar(df_plant: pd.DataFrame) -> tuple:
 
         st.markdown("<hr/>", unsafe_allow_html=True)
 
+        st.markdown('<p class="sb-nav-lbl">&#128197; Data As-Of Date</p>', unsafe_allow_html=True)
+        from datetime import timedelta as _td
+        _yesterday = datetime.now().date() - _td(days=1)
+        as_of_date = st.date_input(
+            "Show data up to:",
+            value=_yesterday,
+            max_value=datetime.now().date(),
+            format="DD/MM/YYYY",
+            help="KPI counts will include only records on or before this date.",
+        )
+
+        st.markdown("<hr/>", unsafe_allow_html=True)
+
         # Use Streamlit's default sidebar collapse/expand button for robust functionality
         # No custom restore button injected
 
@@ -3092,7 +3158,7 @@ def render_sidebar(df_plant: pd.DataFrame) -> tuple:
             key  = unique_uploader_key,
         )
 
-    return selected_zones, selected_plants, uploaded_dc, system_info_slot
+    return selected_zones, selected_plants, uploaded_dc, system_info_slot, as_of_date
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -3240,12 +3306,12 @@ def render_dashboard(
     zone_exception_summary_df: pd.DataFrame,
     zone_filter        : list,
     plant_filter       : list,
+    as_of_date         = None,
 ) -> None:
     """Main dashboard page with KPI tiles, zone chart, and plant table."""
 
-
-
-    render_header()
+    _aod_label = as_of_date.strftime("%d %b %Y") if as_of_date else ""
+    render_header(subtitle=f"Data as of: {_aod_label}" if _aod_label else "")
     # ── Navigation Filters (Zone & Plant) ────────────────────────────────────
     st.markdown('<div class="sec-title">&#128205; Navigation Filters</div>', unsafe_allow_html=True)
     filters_col1, filters_col2 = st.columns([1, 1])
@@ -7020,7 +7086,7 @@ def main() -> None:
         st.sidebar.warning(f"Zone master not loaded: {exc}")
 
     # Sidebar
-    selected_zones, selected_plants, uploaded_dc, sidebar_system_info_slot = render_sidebar(df_plant)
+    selected_zones, selected_plants, uploaded_dc, sidebar_system_info_slot, as_of_date = render_sidebar(df_plant)
 
     # Resolve data source
     pending_dc_xls = os.path.join(REPORTS_DIR, "PENDING_DC_SOD.xls")
@@ -7071,6 +7137,7 @@ def main() -> None:
             df_plant,
             zone_filter  = selected_zones  or None,
             plant_filter = selected_plants or None,
+            as_of_date   = as_of_date,
         )
     else:
         pending_dc_result = {
@@ -7091,6 +7158,7 @@ def main() -> None:
             df_plant,
             zone_filter  = selected_zones  or None,
             plant_filter = selected_plants or None,
+            as_of_date   = as_of_date,
         )
     else:
         open_delivery_result = {
@@ -7110,6 +7178,7 @@ def main() -> None:
             df_plant,
             zone_filter  = selected_zones  or None,
             plant_filter = selected_plants or None,
+            as_of_date   = as_of_date,
         )
     else:
         open_intransit_result = {
@@ -7129,6 +7198,7 @@ def main() -> None:
             df_plant,
             zone_filter  = selected_zones  or None,
             plant_filter = selected_plants or None,
+            as_of_date   = as_of_date,
         )
     else:
         open_sales_orders_result = {
@@ -7148,6 +7218,7 @@ def main() -> None:
             df_plant,
             zone_filter  = selected_zones  or None,
             plant_filter = selected_plants or None,
+            as_of_date   = as_of_date,
         )
     else:
         pending_invoices_result = {
@@ -7186,6 +7257,7 @@ def main() -> None:
             df_plant,
             zone_filter  = selected_zones  or None,
             plant_filter = selected_plants or None,
+            as_of_date   = as_of_date,
         )
     else:
         open_short_sales_result = {
@@ -7205,6 +7277,7 @@ def main() -> None:
             df_plant,
             zone_filter  = selected_zones  or None,
             plant_filter = selected_plants or None,
+            as_of_date   = as_of_date,
         )
     else:
         open_short_sto_result = {
@@ -7282,6 +7355,7 @@ def main() -> None:
             zone_exception_summary_df,
             selected_zones,
             selected_plants,
+            as_of_date=as_of_date,
         )
     elif page == "pending_dc_details":
         render_pending_dc_details(pending_dc_result, selected_zones, selected_plants)
