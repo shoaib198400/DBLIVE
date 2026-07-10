@@ -256,20 +256,42 @@ def build_zone_excel_attachments(
 
 # ── HTML email builder ────────────────────────────────────────────────────────
 
+def _kpi_tile_html(label: str, value: str, sub: str, border_color: str, bg: str) -> str:
+    """Render one KPI tile cell (email-safe, table-based, no flex/grid)."""
+    return (
+        f'<td width="25%" style="padding:4px;">'
+        f'<table width="100%" cellpadding="0" cellspacing="0">'
+        f'<tr><td style="background:{bg};border-top:4px solid {border_color};'
+        f'border-radius:8px;padding:12px 10px 10px;text-align:center;">'
+        f'<div style="font-size:9px;font-weight:700;color:#666;text-transform:uppercase;'
+        f'letter-spacing:.07em;margin-bottom:5px;">{label}</div>'
+        f'<div style="font-size:20px;font-weight:900;color:{border_color};'
+        f'line-height:1.1;">{value}</div>'
+        f'<div style="font-size:9px;color:#888;margin-top:3px;">{sub}</div>'
+        f'</td></tr></table>'
+        f'</td>'
+    )
+
+
 def build_exception_email_html(
     zone_name: str,
     as_of_date: str,
-    exception_summary_df: pd.DataFrame,   # all_exception_plant_df filtered to this zone
+    exception_summary_df: pd.DataFrame,
     selected_exceptions: List[str],
     custom_intro: str = "",
     attachment_names: Optional[List[str]] = None,
+    zone_kpi_dict: Optional[dict] = None,
 ) -> str:
-    """Build HPCL-branded HTML email body for one zone's exceptions."""
+    """Build HPCL-branded HTML email body for one zone's exceptions.
+
+    zone_kpi_dict: pre-computed per-zone KPI values dict (from _build_zone_kpi_dict).
+    """
 
     primary   = "#003087"
     secondary = "#0057A8"
     accent    = "#FFD700"
     as_of     = as_of_date or datetime.now().strftime("%d %b %Y")
+    kpis      = zone_kpi_dict or {}
 
     # Only include columns that exist and are selected
     exc_cols = [c for c in selected_exceptions if c in exception_summary_df.columns]
@@ -287,34 +309,105 @@ def build_exception_email_html(
 
     total_locations = len(zone_df)
 
-    # ── Table header ───────────────────────────────────────────────────────────
+    # ── KPI Tiles block ────────────────────────────────────────────────────────
+    def _n(key, default=0):
+        return kpis.get(key, default)
+
+    def _tile_row(tiles):
+        cells = "".join(
+            _kpi_tile_html(t["label"], t["value"], t["sub"], t["color"], t["bg"])
+            for t in tiles
+        )
+        return f'<tr>{cells}</tr>'
+
+    def _fmt_count(v):
+        try:
+            return f"{int(v):,}"
+        except Exception:
+            return str(v)
+
+    def _fmt_ltrs(v):
+        try:
+            n = float(v)
+            if n >= 1_000_000:
+                return f"{n/1_000_000:.2f}M L"
+            if n >= 1_000:
+                return f"{n/1_000:.1f}K L"
+            return f"{n:,.0f} L"
+        except Exception:
+            return str(v)
+
+    row1_tiles = [
+        {"label": "Pending DCs",        "value": _fmt_count(_n("Pending DC")),
+         "sub": "Unique shipments",     "color": "#CC2929", "bg": "#FFF0F0"},
+        {"label": "Open Deliveries",    "value": _fmt_count(_n("Open Delivery")),
+         "sub": "Unique deliveries",    "color": "#CC2929", "bg": "#FFF0F0"},
+        {"label": "Open In-Transit",    "value": _fmt_count(_n("Open In-Transit")),
+         "sub": "Unique STO orders",    "color": "#0369A1", "bg": "#EFF8FF"},
+        {"label": "Open Sales Orders",  "value": _fmt_count(_n("Open Sales Order")),
+         "sub": "Unique sales docs",    "color": "#D97706", "bg": "#FFFBEB"},
+    ]
+    row2_tiles = [
+        {"label": "Pending Invoices",   "value": _fmt_count(_n("Pending Invoice")),
+         "sub": "Unique deliveries",    "color": "#D97706", "bg": "#FFFBEB"},
+        {"label": "Shortage Sales",     "value": _fmt_ltrs(_n("Shortage Sales (Ltrs)")),
+         "sub": "Total Litres",         "color": "#CC2929", "bg": "#FFF0F0"},
+        {"label": "Shortage STO",       "value": _fmt_ltrs(_n("Shortage STO (Ltrs)")),
+         "sub": "Total Litres",         "color": "#CC2929", "bg": "#FFF0F0"},
+        {"label": "Tank Reco",          "value": _fmt_count(_n("Tank Reco")),
+         "sub": "Plant+Tank+Material",  "color": "#7C3AED", "bg": "#F5F3FF"},
+    ]
+    row3_tiles = [
+        {"label": "PL Unblock Qty",
+         "value": f"{_n('PL Unblock (KL)', 0.0):.3f} KL",
+         "sub": "Pipeline stock",       "color": "#0369A1", "bg": "#EFF8FF"},
+        {"label": "Dummy Tank Qty",
+         "value": f"{_n('Dummy Tank (KL)', 0.0):.3f} KL",
+         "sub": "Excl. DBIT/DLUB/DSLP","color": "#D97706", "bg": "#FFFBEB"},
+        {"label": "Tank Turns",
+         "value": f"{_n('Tank Turns', 0.0):.2f}",
+         "sub": "Dispatches÷Capacity",  "color": "#15803D", "bg": "#F0FDF4"},
+        {"label": "Location Visit",
+         "value": f"{int(_n('Locations Visited', 0))} loc | {_n('Location Compliance (%)', 0.0):.1f}%",
+         "sub": "Visited | Compliance", "color": "#15803D", "bg": "#F0FDF4"},
+    ]
+
+    kpi_tiles_html = (
+        '<table width="100%" cellpadding="0" cellspacing="0">'
+        + _tile_row(row1_tiles)
+        + '<tr><td colspan="4" style="height:6px;"></td></tr>'
+        + _tile_row(row2_tiles)
+        + '<tr><td colspan="4" style="height:6px;"></td></tr>'
+        + _tile_row(row3_tiles)
+        + '</table>'
+    ) if kpis else ""
+
+    # ── Location-wise exception table ──────────────────────────────────────────
     col_heads = "".join(
-        f'<th style="background:{secondary};color:#fff;padding:8px 10px;'
-        f'font-size:11px;font-weight:700;text-align:center;'
+        f'<th style="background:{secondary};color:#fff;padding:7px 8px;'
+        f'font-size:10px;font-weight:700;text-align:center;'
         f'border:1px solid rgba(255,255,255,0.2);white-space:nowrap;">'
         f'{EXCEPTION_LABELS.get(c, c)}</th>'
         for c in exc_cols
     )
     table_header = (
         f'<tr>'
-        f'<th style="background:{primary};color:{accent};padding:8px 12px;'
-        f'font-size:11px;font-weight:700;text-align:left;'
+        f'<th style="background:{primary};color:{accent};padding:7px 10px;'
+        f'font-size:10px;font-weight:700;text-align:left;'
         f'border:1px solid rgba(255,255,255,0.2);">Location</th>'
         f'{col_heads}'
-        f'<th style="background:{primary};color:{accent};padding:8px 10px;'
-        f'font-size:11px;font-weight:700;text-align:center;'
+        f'<th style="background:{primary};color:{accent};padding:7px 8px;'
+        f'font-size:10px;font-weight:700;text-align:center;'
         f'border:1px solid rgba(255,255,255,0.2);">Total</th>'
         f'</tr>'
     )
 
-    # ── Table rows ─────────────────────────────────────────────────────────────
-    def _fmt(v):
+    def _fmt_cell(v):
         try:
             n = int(float(v))
             color  = "#CC0000" if n > 0 else "#007700"
             weight = "700" if n > 0 else "400"
-            return (f'<span style="color:{color};font-weight:{weight};">'
-                    f'{n:,}</span>')
+            return f'<span style="color:{color};font-weight:{weight};">{n:,}</span>'
         except Exception:
             return str(v)
 
@@ -322,20 +415,20 @@ def build_exception_email_html(
     for i, (_, row) in enumerate(zone_df.iterrows()):
         bg    = "#FFFFFF" if i % 2 == 0 else "#F4F8FF"
         cells = "".join(
-            f'<td style="padding:7px 10px;font-size:11px;text-align:center;'
+            f'<td style="padding:6px 8px;font-size:10px;text-align:center;'
             f'border:1px solid #E2EAF4;background:{bg};">'
-            f'{_fmt(row.get(c, 0))}</td>'
+            f'{_fmt_cell(row.get(c, 0))}</td>'
             for c in exc_cols
         )
-        total_val = int(pd.to_numeric(row.get("Total Exceptions", 0), errors="coerce") or 0)
+        total_val  = int(pd.to_numeric(row.get("Total Exceptions", 0), errors="coerce") or 0)
         plant_name = row.get("Plant Name", row.get("Location", ""))
         rows_html += (
             f'<tr>'
-            f'<td style="padding:7px 12px;font-size:11px;font-weight:600;'
+            f'<td style="padding:6px 10px;font-size:10px;font-weight:600;'
             f'color:{primary};border:1px solid #E2EAF4;background:{bg};">'
             f'{plant_name}</td>'
             f'{cells}'
-            f'<td style="padding:7px 10px;font-size:11px;font-weight:700;'
+            f'<td style="padding:6px 8px;font-size:10px;font-weight:700;'
             f'text-align:center;border:1px solid #E2EAF4;background:{bg};'
             f'color:#CC0000;">{total_val:,}</td>'
             f'</tr>'
@@ -344,8 +437,8 @@ def build_exception_email_html(
     if not rows_html:
         rows_html = (
             f'<tr><td colspan="{len(exc_cols)+2}" style="text-align:center;'
-            f'padding:18px;color:#666;font-size:12px;">'
-            f'No exceptions found for this zone.</td></tr>'
+            f'padding:16px;color:#666;font-size:11px;">'
+            f'No location-level exceptions found for this zone.</td></tr>'
         )
 
     # ── Attachments list ───────────────────────────────────────────────────────
@@ -355,7 +448,7 @@ def build_exception_email_html(
             for n in attachment_names
         )
         attach_block = (
-            f'<tr><td style="padding:10px 30px 16px;">'
+            f'<tr><td style="padding:10px 28px 16px;">'
             f'<p style="margin:0 0 5px;font-size:12px;font-weight:700;color:{primary};">'
             f'&#128206; Attachments:</p>'
             f'<ul style="margin:0;padding-left:18px;color:#333;">{attach_items}</ul>'
@@ -365,10 +458,19 @@ def build_exception_email_html(
         attach_block = ""
 
     intro_block = (
-        f'<p style="margin:0 0 14px;font-size:13px;line-height:1.6;color:#333;">'
+        f'<p style="margin:0 0 12px;font-size:12px;line-height:1.6;color:#333;">'
         f'{custom_intro}</p>'
         if custom_intro else ""
     )
+
+    kpi_section = (
+        f'<!-- KPI Summary Tiles -->'
+        f'<tr><td style="padding:4px 28px 2px;">'
+        f'<p style="margin:0 0 6px;font-size:12px;font-weight:700;color:{primary};">'
+        f'&#128202; Zone KPI Summary — {as_of}</p>'
+        f'{kpi_tiles_html}'
+        f'</td></tr>'
+    ) if kpi_tiles_html else ""
 
     return f"""<!DOCTYPE html>
 <html>
@@ -395,16 +497,16 @@ def build_exception_email_html(
           </div>
         </td>
         <td align="right">
-          <span style="font-size:11px;color:rgba(255,255,255,0.80);">{as_of}</span>
+          <span style="font-size:11px;color:rgba(255,255,255,0.80);">Data as of: {as_of}</span>
         </td>
       </tr></table>
     </td></tr>
 
     <!-- Zone pill -->
-    <tr><td style="padding:16px 28px 8px;">
+    <tr><td style="padding:14px 28px 6px;">
       <div style="display:inline-block;background:#E8F0FE;
                   border-left:4px solid {primary};border-radius:6px;
-                  padding:9px 16px;">
+                  padding:8px 16px;">
         <span style="font-size:14px;font-weight:700;color:{primary};">
           &#128205;&nbsp;{zone_name}
         </span>
@@ -415,8 +517,8 @@ def build_exception_email_html(
       </div>
     </td></tr>
 
-    <!-- Intro -->
-    <tr><td style="padding:8px 28px 12px;">
+    <!-- Intro para -->
+    <tr><td style="padding:8px 28px 10px;">
       {intro_block}
       <p style="margin:0;font-size:12px;color:#444;line-height:1.6;">
         Please find below a summary of <b>open SOD exceptions</b> for your zone
@@ -425,8 +527,17 @@ def build_exception_email_html(
       </p>
     </td></tr>
 
+    {kpi_section}
+
+    <!-- Location-wise exception table heading -->
+    <tr><td style="padding:14px 28px 4px;">
+      <p style="margin:0;font-size:12px;font-weight:700;color:{primary};">
+        &#127981; Location-wise Exception Detail
+      </p>
+    </td></tr>
+
     <!-- Exception summary table -->
-    <tr><td style="padding:0 28px 18px;">
+    <tr><td style="padding:0 28px 16px;">
       <table width="100%" cellpadding="0" cellspacing="0"
              style="border-collapse:collapse;border-radius:8px;overflow:hidden;
                     border:1px solid #D5E2F3;">
@@ -466,11 +577,13 @@ def send_exception_mail_for_zone(
     custom_intro: str = "",
     test_mode: bool = False,
     test_email: str = "",
+    zone_kpi_dict: Optional[dict] = None,
 ) -> dict:
     """Send exception mail for one zone with per-exception Excel attachments.
 
     For each selected exception type that has data for the zone, one Excel file
     is built and attached: '<ZoneName>_<ExceptionLabel>.xlsx'.
+    zone_kpi_dict: per-zone KPI values rendered as tiles in the email body.
 
     test_mode=True  → mail goes to test_email only (no zone recipients, no BCC).
     Returns {"ok": bool, "mode": str, "msg": str, "attachments": [filenames]}
@@ -501,6 +614,7 @@ def send_exception_mail_for_zone(
     html_body = build_exception_email_html(
         zone_name, as_of_date, zone_summary, selected_exceptions,
         custom_intro, attachment_names,
+        zone_kpi_dict=zone_kpi_dict,
     )
 
     as_of   = as_of_date or datetime.now().strftime("%d %b %Y")

@@ -3381,6 +3381,9 @@ def render_dashboard(
                 .fillna(df_loc_work["Plant Desc."].astype(str).str.strip())
             )
 
+            # Save all-zones copy for mail (before nav filter)
+            _loc_for_mail = df_loc_work.copy()
+
             if selected_zone != "All Zones":
                 df_loc_work = df_loc_work[df_loc_work["Zone Name"] == selected_zone]
             if selected_plant != "All Plants":
@@ -3456,6 +3459,9 @@ def render_dashboard(
                 ~dummy_tank_filtered["Storage Location"].isin(["DBIT", "DLUB", "DSLP"])
             ]
 
+            # Save all-zones copy for mail (before nav filter)
+            _dummy_for_mail = dummy_tank_filtered.copy()
+
             if selected_zone != "All Zones":
                 dummy_tank_filtered = dummy_tank_filtered[dummy_tank_filtered["Zone Name"] == selected_zone]
             if selected_plant != "All Plants":
@@ -3503,6 +3509,9 @@ def render_dashboard(
                 right_on="Plant Code",
                 how="left",
             )
+
+            # Save all-zones copy for mail (before nav filter)
+            _pl_for_mail = pl_unblock_filtered.copy()
 
             if selected_zone != "All Zones":
                 pl_unblock_filtered = pl_unblock_filtered[pl_unblock_filtered["Zone Name"] == selected_zone]
@@ -3560,6 +3569,9 @@ def render_dashboard(
             df_tt = df_tt.merge(plant_map_tt, left_on="Plant",
                                 right_on="Plant Code", how="left",
                                 suffixes=("", "_master"))
+
+            # Save all-zones copy for mail (before nav filter)
+            _tt_for_mail = df_tt.copy()
 
             # Apply navigation filters
             if selected_zone != "All Zones":
@@ -3858,6 +3870,12 @@ def render_dashboard(
         st.info("No locationwise exception data available.")
 
     # ── Mail Center ──────────────────────────────────────────────────────────
+    # Ensure pre-filter copies exist even when source files are absent
+    _dummy_for_mail = locals().get("_dummy_for_mail", pd.DataFrame())
+    _pl_for_mail    = locals().get("_pl_for_mail",    pd.DataFrame())
+    _tt_for_mail    = locals().get("_tt_for_mail",    pd.DataFrame())
+    _loc_for_mail   = locals().get("_loc_for_mail",   pd.DataFrame())
+
     _detail_dfs_for_mail = {
         "Pending DC":                    pending_dc_result.get("detail_df",          pd.DataFrame()),
         "Open Delivery":                 open_delivery_result.get("detail_df",       pd.DataFrame()),
@@ -3867,7 +3885,20 @@ def render_dashboard(
         "Shortage Sales (Billing Docs)": open_short_sales_result.get("detail_df",   pd.DataFrame()),
         "Shortage STO (Billing Docs)":   open_short_sto_result.get("detail_df",     pd.DataFrame()),
     }
-    _render_mail_center(all_exception_plant_df, _detail_dfs_for_mail)
+    _zone_kpi_for_mail = _build_zone_kpi_dict(
+        zone_exception_summary_df = zone_exception_summary_df,
+        tank_reco_result          = tank_reco_result,
+        dummy_tank_df             = _dummy_for_mail,
+        pl_unblock_df             = _pl_for_mail,
+        tank_turns_df_all         = _tt_for_mail,
+        loc_visit_df              = _loc_for_mail,
+    )
+    _render_mail_center(
+        all_exception_plant_df,
+        _detail_dfs_for_mail,
+        as_of_date    = as_of_date,
+        zone_kpi_dict = _zone_kpi_for_mail,
+    )
 
     # ── Unmatched plant warning ───────────────────────────────────────────────
     unmatched = pending_dc_result.get("unmatched", [])
@@ -3883,9 +3914,94 @@ def render_dashboard(
             )
 
 
+def _build_zone_kpi_dict(
+    zone_exception_summary_df: pd.DataFrame,
+    tank_reco_result: dict,
+    dummy_tank_df: pd.DataFrame,
+    pl_unblock_df: pd.DataFrame,
+    tank_turns_df_all: pd.DataFrame,
+    loc_visit_df: pd.DataFrame,
+) -> dict:
+    """Build per-zone dict of all KPI values for the mail body tiles."""
+    result: dict = {}
+
+    # Collect all zone names from zone_exception_summary_df
+    all_zones: list = []
+    if zone_exception_summary_df is not None and not zone_exception_summary_df.empty:
+        all_zones = sorted(zone_exception_summary_df["Zone Name"].dropna().unique().tolist())
+
+    tank_reco_zone_df = pd.DataFrame()
+    if tank_reco_result:
+        tank_reco_zone_df = tank_reco_result.get("zone_summary", pd.DataFrame())
+
+    for zone in all_zones:
+        kpis: dict = {}
+
+        # ── 7 exception counts ──────────────────────────────────────────────
+        if zone_exception_summary_df is not None and not zone_exception_summary_df.empty:
+            zrow = zone_exception_summary_df[zone_exception_summary_df["Zone Name"] == zone]
+            if not zrow.empty:
+                r = zrow.iloc[0]
+                kpis["Pending DC"]             = int(pd.to_numeric(r.get("Pending DC", 0), errors="coerce") or 0)
+                kpis["Open Delivery"]          = int(pd.to_numeric(r.get("Open Delivery", 0), errors="coerce") or 0)
+                kpis["Open In-Transit"]        = int(pd.to_numeric(r.get("Open In-Transit", 0), errors="coerce") or 0)
+                kpis["Open Sales Order"]       = int(pd.to_numeric(r.get("Open Sales Order", 0), errors="coerce") or 0)
+                kpis["Pending Invoice"]        = int(pd.to_numeric(r.get("Pending Invoice", 0), errors="coerce") or 0)
+                kpis["Shortage Sales (Ltrs)"]  = float(pd.to_numeric(r.get("Shortage Sales (Billing Docs)", 0), errors="coerce") or 0)
+                kpis["Shortage STO (Ltrs)"]    = float(pd.to_numeric(r.get("Shortage STO (Billing Docs)", 0), errors="coerce") or 0)
+                kpis["Total Exceptions"]       = int(pd.to_numeric(r.get("Total Exceptions", 0), errors="coerce") or 0)
+
+        # ── Tank Reco ────────────────────────────────────────────────────────
+        if not tank_reco_zone_df.empty and "Zone Name" in tank_reco_zone_df.columns:
+            zrow = tank_reco_zone_df[tank_reco_zone_df["Zone Name"] == zone]
+            kpis["Tank Reco"] = int(pd.to_numeric(zrow.get("Tank Reco Count", pd.Series([0])).sum(), errors="coerce") or 0) if not zrow.empty else 0
+        else:
+            kpis["Tank Reco"] = 0
+
+        # ── Dummy Tank (KL) ──────────────────────────────────────────────────
+        if dummy_tank_df is not None and not dummy_tank_df.empty and "Zone Name" in dummy_tank_df.columns:
+            z_d = dummy_tank_df[dummy_tank_df["Zone Name"] == zone]
+            kpis["Dummy Tank (KL)"] = round(float(pd.to_numeric(z_d["Unrestricted"], errors="coerce").fillna(0).sum()) / 1000, 3)
+        else:
+            kpis["Dummy Tank (KL)"] = 0.0
+
+        # ── PL Unblock (KL) ──────────────────────────────────────────────────
+        if pl_unblock_df is not None and not pl_unblock_df.empty and "Zone Name" in pl_unblock_df.columns:
+            z_p = pl_unblock_df[pl_unblock_df["Zone Name"] == zone]
+            kpis["PL Unblock (KL)"] = round(float(pd.to_numeric(z_p["Unrestricted"], errors="coerce").fillna(0).sum()) / 1000, 3)
+        else:
+            kpis["PL Unblock (KL)"] = 0.0
+
+        # ── Tank Turns ───────────────────────────────────────────────────────
+        if tank_turns_df_all is not None and not tank_turns_df_all.empty and "Zone Name" in tank_turns_df_all.columns:
+            z_t = tank_turns_df_all[tank_turns_df_all["Zone Name"] == zone]
+            d   = pd.to_numeric(z_t.get("Dispatches",    pd.Series()), errors="coerce").fillna(0).sum()
+            c   = pd.to_numeric(z_t.get("Tank Capacity", pd.Series()), errors="coerce").fillna(0).sum()
+            kpis["Tank Turns"] = round(d / c, 2) if c > 0 else 0.0
+        else:
+            kpis["Tank Turns"] = 0.0
+
+        # ── Location Visit ───────────────────────────────────────────────────
+        if loc_visit_df is not None and not loc_visit_df.empty and "Zone Name" in loc_visit_df.columns:
+            z_l = loc_visit_df[loc_visit_df["Zone Name"] == zone]
+            kpis["Locations Visited"]       = int(z_l["Planning Plant"].nunique()) if "Planning Plant" in z_l.columns else 0
+            tot = pd.to_numeric(z_l.get("TotalRecomms",  pd.Series()), errors="coerce").fillna(0).sum()
+            cls = pd.to_numeric(z_l.get("ClosedRecomms", pd.Series()), errors="coerce").fillna(0).sum()
+            kpis["Location Compliance (%)"] = round(cls / tot * 100, 1) if tot > 0 else 0.0
+        else:
+            kpis["Locations Visited"]       = 0
+            kpis["Location Compliance (%)"] = 0.0
+
+        result[zone] = kpis
+
+    return result
+
+
 def _render_mail_center(
     all_exception_plant_df: pd.DataFrame,
     detail_dfs: dict = None,
+    as_of_date = None,
+    zone_kpi_dict: dict = None,
 ) -> None:
     """Mail Center — compose and send zone exception alerts via Outlook."""
     import emails as _em
@@ -3919,7 +4035,8 @@ def _render_mail_center(
 
     with st.expander("&#9993; Compose & Send Exception Mails", expanded=auto_open):
 
-        as_of_date = datetime.now().strftime("%d %b %Y")
+        # Use the sidebar-selected as-of date; fall back to today
+        as_of_label = as_of_date.strftime("%d %b %Y") if as_of_date else datetime.now().strftime("%d %b %Y")
 
         # ── Row 1: Zone selector + test mode ─────────────────────────────────
         col_zones, col_mode = st.columns([3, 1])
@@ -3986,7 +4103,7 @@ def _render_mail_center(
             with r3:
                 if not test_mode:
                     st.markdown(f"**BCC:** `{'; '.join(_em.BCC_EMAILS)}`")
-                st.markdown(f"**&#128197; Date:** `{as_of_date}`")
+                st.markdown(f"**&#128197; Data as of:** `{as_of_label}`")
 
             # Attachments that will be generated
             preview_attachments = _em.build_zone_excel_attachments(
@@ -4005,12 +4122,14 @@ def _render_mail_center(
             zone_df_preview = all_exception_plant_df[
                 all_exception_plant_df["Zone Name"] == preview_zone
             ].copy()
+            zone_kpis_preview = (zone_kpi_dict or {}).get(preview_zone, {})
             preview_html = _em.build_exception_email_html(
-                preview_zone, as_of_date, zone_df_preview,
+                preview_zone, as_of_label, zone_df_preview,
                 selected_exceptions, custom_intro, attach_names,
+                zone_kpi_dict=zone_kpis_preview,
             )
             st.markdown("**Mail body preview:**")
-            _stc.html(preview_html, height=520, scrolling=True)
+            _stc.html(preview_html, height=700, scrolling=True)
 
         # ── Send button ───────────────────────────────────────────────────────
         st.markdown("---")
@@ -4033,10 +4152,11 @@ def _render_mail_center(
                         all_exception_plant_df=all_exception_plant_df,
                         detail_dfs=detail_dfs,
                         selected_exceptions=selected_exceptions,
-                        as_of_date=as_of_date,
+                        as_of_date=as_of_label,
                         custom_intro=custom_intro,
                         test_mode=test_mode,
                         test_email=test_email,
+                        zone_kpi_dict=(zone_kpi_dict or {}).get(zone, {}),
                     )
                     results.append((zone, result))
                     prog.progress(
