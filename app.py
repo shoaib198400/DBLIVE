@@ -5550,9 +5550,8 @@ def render_pending_dc_details(
     st.markdown("""
     <div class="detail-hdr">
         <h3>&#128666; Pending DC's &#8212; Detailed Exception View</h3>
-        <p>Zone-wise and Plant-wise breakdown of all Pending Delivery Challans
-        if not df.empty:
-            _render_streamlit_dataframe(df, max_height=420, hide_index=True)
+        <p>Zone-wise and Plant-wise breakdown of all Pending Delivery Challans</p>
+    </div>
     """, unsafe_allow_html=True)
 
     summary_df   = pending_dc_result.get("summary_df",   pd.DataFrame())
