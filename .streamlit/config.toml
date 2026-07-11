@@ -1,3 +1,6 @@
+[server]
+port = 8504
+
 [theme]
 base = "light"
 backgroundColor = "#F4F6FA"
