@@ -3118,13 +3118,18 @@ def render_sidebar(df_plant: pd.DataFrame) -> tuple:
         st.markdown('<p class="sb-nav-lbl">&#128197; Data As-Of Date</p>', unsafe_allow_html=True)
         from datetime import timedelta as _td
         _yesterday = datetime.now().date() - _td(days=1)
+        # Initialise session state on first load so the date persists across reruns
+        if "as_of_date_picker" not in st.session_state:
+            st.session_state["as_of_date_picker"] = _yesterday
         as_of_date = st.date_input(
             "Show data up to:",
-            value=_yesterday,
+            value=st.session_state.get("as_of_date_picker", _yesterday),
             max_value=datetime.now().date(),
             format="DD/MM/YYYY",
+            key="as_of_date_picker",
             help="KPI counts will include only records on or before this date.",
         )
+        st.caption(f"Filtering data up to: **{as_of_date.strftime('%d %b %Y')}**")
 
         st.markdown("<hr/>", unsafe_allow_html=True)
 
@@ -3681,7 +3686,13 @@ def render_dashboard(
         if "detail_df" in result:
             result["detail_df"] = filter_df(result["detail_df"])
 
-    st.markdown('<div class="sec-title">&#128202; Exception Parameters &#8212; Live Summary</div>', unsafe_allow_html=True)
+    _aod_disp = as_of_date.strftime("%d %b %Y") if as_of_date else "all dates"
+    st.markdown(
+        f'<div class="sec-title">&#128202; Exception Parameters &#8212; Live Summary'
+        f'&nbsp;&nbsp;<span style="font-size:12px;font-weight:400;color:#888;">'
+        f'&#128197; Data filtered up to: <b>{_aod_disp}</b></span></div>',
+        unsafe_allow_html=True,
+    )
 
     col1, col2, col3, col4 = st.columns(4, gap="small")
 
