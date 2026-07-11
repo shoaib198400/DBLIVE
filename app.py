@@ -1597,8 +1597,10 @@ def process_pending_dc(
         return EMPTY
 
     # As-of-date filter: use first available date column in the source file
-    _dc_date_candidates = ["DOCUMENT DATE", "DISPATCH DATE", "PLANNED GI DATE",
-                           "PLANNED GOODS ISSUE DATE", "SHIPMENT DATE", "DELIVERY DATE"]
+    # BILLING DATE is the primary date in the actual Pending DC SAP export.
+    _dc_date_candidates = ["BILLING DATE", "DOCUMENT DATE", "DISPATCH DATE",
+                           "PLANNED GI DATE", "PLANNED GOODS ISSUE DATE",
+                           "SHIPMENT DATE", "DELIVERY DATE"]
     if as_of_date is not None:
         _aod = pd.Timestamp(as_of_date)
         _dc_date_col = next((c for c in _dc_date_candidates if c in df_dc.columns), None)
@@ -1725,10 +1727,15 @@ def process_open_deliveries(
     work[deliv_col] = work[deliv_col].astype(str).str.strip()
     work = work[work[deliv_col] != ""]
 
-    # As-of-date filter on GOODS ISSUE DATE
-    if as_of_date is not None and gi_date_col in work.columns:
+    # As-of-date filter: use PICKING DATE as the entry-time proxy (no future
+    # placeholder dates), falling back to LOADING DATE then GOODS ISSUE DATE.
+    # GOODS ISSUE DATE can have SAP month-end placeholders (e.g. 2026-12-31)
+    # which would incorrectly exclude valid open deliveries.
+    _od_date_candidates = ["PICKING DATE", "LOADING DATE", gi_date_col]
+    _od_date_col = next((c for c in _od_date_candidates if c in work.columns), None)
+    if as_of_date is not None and _od_date_col:
         _aod = pd.Timestamp(as_of_date)
-        _parsed = pd.to_datetime(work[gi_date_col], errors="coerce", dayfirst=True)
+        _parsed = pd.to_datetime(work[_od_date_col], errors="coerce", dayfirst=True)
         work = work[_parsed.isna() | (_parsed <= _aod)].copy()
 
     # Keep one row per shipping-point + delivery combination for drill-down accuracy.
