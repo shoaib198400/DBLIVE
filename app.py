@@ -7259,16 +7259,7 @@ def main() -> None:
     if dc_source is not None:
         with st.spinner("Loading Pending DC data …"):
             df_dc = load_pending_dc(dc_source)
-        # Diagnostic summary for Pending DC file
-        st.sidebar.markdown("---")
-        st.sidebar.markdown("**Pending DC Diagnostics**")
-        st.sidebar.markdown(f"Rows loaded: **{len(df_dc)}**")
-        if not df_dc.empty:
-            unique_pairs = df_dc.drop_duplicates(subset=["SENDING PLANT", "SHIPMENT"])
-            st.sidebar.markdown(f"Unique (SENDING PLANT, SHIPMENT): **{len(unique_pairs)}**")
-            if len(unique_pairs) < 1:
-                st.sidebar.warning("⚠️ No unique Pending DC pairs found. Check file content.")
-        else:
+        if df_dc.empty:
             st.sidebar.warning("⚠️ Pending DC file is empty.")
         pending_dc_result = process_pending_dc(
             df_dc,
@@ -7276,10 +7267,6 @@ def main() -> None:
             zone_filter  = selected_zones  or None,
             plant_filter = selected_plants or None,
             as_of_date   = as_of_date,
-        )
-        st.sidebar.caption(
-            f"[DBG] DC={pending_dc_result.get('total_count','?')} "
-            f"| aod={as_of_date}"
         )
     else:
         pending_dc_result = {
