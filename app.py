@@ -7277,6 +7277,10 @@ def main() -> None:
             plant_filter = selected_plants or None,
             as_of_date   = as_of_date,
         )
+        st.sidebar.caption(
+            f"[DBG] DC={pending_dc_result.get('total_count','?')} "
+            f"| aod={as_of_date}"
+        )
     else:
         pending_dc_result = {
             "total_count" : 0,
