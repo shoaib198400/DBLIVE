@@ -3700,23 +3700,21 @@ def render_dashboard(
                 df_loc_work["Audit Start Date"], errors="coerce", dayfirst=True
             )
             _fq = _dates.apply(_get_fy_quarter)
-            df_loc_work["_FY"]      = _fq.apply(lambda x: x[0])
-            df_loc_work["_Quarter"] = _fq.apply(lambda x: x[1])
-            df_loc_work["_TotalRecommsNum"] = pd.to_numeric(
-                df_loc_work["TotalRecomms"], errors="coerce"
-            ).fillna(0)
-            # Dedup: per Plant+FY+Quarter keep the audit with MAX recommendations
-            # (as per business rule — if multiple audits in same quarter, pick the most comprehensive one)
-            # Tie-break by Audit Number descending (higher = more recent)
+            df_loc_work["_FY"]       = _fq.apply(lambda x: x[0])
+            df_loc_work["_Quarter"]  = _fq.apply(lambda x: x[1])
+            df_loc_work["_date_sort"] = _dates
+            # Dedup: per Plant+FY+Quarter keep the LATEST audit (highest date, then highest Audit Number)
+            # Matches Sr. Manager Inspection Dashboard's dedupByLatestAudit logic
             df_loc_work = (
                 df_loc_work
                 .sort_values(
-                    ["_TotalRecommsNum", "Audit Number"],
+                    ["_date_sort", "Audit Number"],
                     ascending=[False, False],
+                    na_position="last",
                 )
                 .drop_duplicates(subset=["Planning Plant", "_FY", "_Quarter"], keep="first")
                 .rename(columns={"_FY": "FY", "_Quarter": "Quarter"})
-                .drop(columns=["_TotalRecommsNum"])
+                .drop(columns=["_date_sort"])
                 .reset_index(drop=True)
             )
 
