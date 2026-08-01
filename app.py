@@ -1633,7 +1633,7 @@ def load_location_visit(path: str, cache_buster: tuple[int, int] | None = None) 
             return re.sub(r"[^a-z0-9]+", "", str(value).strip().lower())
 
         alias_groups = {
-            "Zone": ["zone", "zone name"],
+            "Zone": ["zone", "zone name", "sbu zone", "sbuzone", "sbu_zone"],
             "Planning Plant": [
                 "planning plant", "planningplant", "planning plant code",
                 "planningplantcode", "plant code", "plant"
@@ -3671,6 +3671,10 @@ def render_dashboard(
             # Restore file Zone (don't override with PlantMaster Zone Name)
             if _file_zone is not None:
                 df_loc_work["Zone"] = _file_zone.values
+            elif "Zone Name" in df_loc_work.columns:
+                df_loc_work["Zone"] = df_loc_work["Zone Name"]
+            else:
+                df_loc_work["Zone"] = "Unmapped"
             df_loc_work["Zone"] = df_loc_work["Zone"].fillna("Unmapped").astype(str).str.strip()
             df_loc_work["Zone Name"] = df_loc_work["Zone"]
             df_loc_work["Plant Name"] = (
