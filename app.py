@@ -139,16 +139,15 @@ def render_location_visit_details(df: pd.DataFrame) -> None:
         "<div class='sec-title'>&#128205; Location Visit &amp; Compliance Analysis</div>",
         unsafe_allow_html=True,
     )
-    back_col, _ = st.columns([1, 7])
-    with back_col:
-        if st.button("⬅ Back to Dashboard", key="btn_back_location_visit"):
-            st.session_state["location_visit_page"] = "main"
-            st.session_state["lv_sub_page"] = "summary"
-            st.session_state["selected_tile"] = None
-            st.session_state["dummy_tank_clicked"] = False
-            st.session_state["pl_unblock_clicked"] = False
-            st.session_state["tank_turns_page"] = "main"
-            st.rerun()
+    _bcols = st.columns([1, 5])
+    if _bcols[0].button("⬅ Back to Dashboard", key="btn_back_location_visit", use_container_width=True):
+        st.session_state["location_visit_page"] = "main"
+        st.session_state["lv_sub_page"] = "summary"
+        st.session_state["selected_tile"] = None
+        st.session_state["dummy_tank_clicked"] = False
+        st.session_state["pl_unblock_clicked"] = False
+        st.session_state["tank_turns_page"] = "main"
+        st.rerun()
 
     if df is None or df.empty:
         st.warning("No data available. Check file upload or data source.")
@@ -212,26 +211,26 @@ def render_location_visit_details(df: pd.DataFrame) -> None:
     # ── 5-card KPI summary (colored HTML cards) ───────────────────────────────
     st.markdown("<div class='sec-title'>&#128202; Overall Summary</div>", unsafe_allow_html=True)
     _cards_html = f"""
-    <div style="display:flex;gap:12px;margin:8px 0 18px 0;flex-wrap:wrap;">
-      <div style="flex:1;min-width:120px;border:2.5px solid #003087;border-radius:10px;padding:16px 10px;text-align:center;background:#f0f7ff;">
-        <div style="font-size:30px;font-weight:800;color:#003087;">{audits:,}</div>
-        <div style="font-size:13px;font-weight:600;color:#003087;margin-top:5px;">&#128506; Audited Locations</div>
+    <div style="display:flex;gap:10px;margin:6px 0 14px 0;flex-wrap:wrap;">
+      <div style="flex:1;min-width:110px;border:2px solid #003087;border-radius:8px;padding:12px 8px;text-align:center;background:#f0f7ff;">
+        <div style="font-size:26px;font-weight:800;color:#003087;">{audits:,}</div>
+        <div style="font-size:12px;font-weight:600;color:#003087;margin-top:4px;">&#128506; Audited Locations</div>
       </div>
-      <div style="flex:1;min-width:120px;border:2.5px solid #424242;border-radius:10px;padding:16px 10px;text-align:center;background:#f9f9f9;">
-        <div style="font-size:30px;font-weight:800;color:#424242;">{total_r:,}</div>
-        <div style="font-size:13px;font-weight:600;color:#424242;margin-top:5px;">&#128203; Total Recommendations</div>
+      <div style="flex:1;min-width:110px;border:2px solid #424242;border-radius:8px;padding:12px 8px;text-align:center;background:#f9f9f9;">
+        <div style="font-size:26px;font-weight:800;color:#424242;">{total_r:,}</div>
+        <div style="font-size:12px;font-weight:600;color:#424242;margin-top:4px;">&#128203; Total Recommendations</div>
       </div>
-      <div style="flex:1;min-width:120px;border:2.5px solid #c62828;border-radius:10px;padding:16px 10px;text-align:center;background:#fff5f5;">
-        <div style="font-size:30px;font-weight:800;color:#c62828;">{open_r:,}</div>
-        <div style="font-size:13px;font-weight:600;color:#c62828;margin-top:5px;">&#128308; Open Recommendations</div>
+      <div style="flex:1;min-width:110px;border:2px solid #c62828;border-radius:8px;padding:12px 8px;text-align:center;background:#fff5f5;">
+        <div style="font-size:26px;font-weight:800;color:#c62828;">{open_r:,}</div>
+        <div style="font-size:12px;font-weight:600;color:#c62828;margin-top:4px;">&#128308; Open Recommendations</div>
       </div>
-      <div style="flex:1;min-width:120px;border:2.5px solid #2e7d32;border-radius:10px;padding:16px 10px;text-align:center;background:#f0fff4;">
-        <div style="font-size:30px;font-weight:800;color:#2e7d32;">{closed_r:,}</div>
-        <div style="font-size:13px;font-weight:600;color:#2e7d32;margin-top:5px;">&#128994; Closed / Complied</div>
+      <div style="flex:1;min-width:110px;border:2px solid #2e7d32;border-radius:8px;padding:12px 8px;text-align:center;background:#f0fff4;">
+        <div style="font-size:26px;font-weight:800;color:#2e7d32;">{closed_r:,}</div>
+        <div style="font-size:12px;font-weight:600;color:#2e7d32;margin-top:4px;">&#128994; Closed / Complied</div>
       </div>
-      <div style="flex:1;min-width:120px;border:2.5px solid {_comp_clr};border-radius:10px;padding:16px 10px;text-align:center;background:#fafff9;">
-        <div style="font-size:30px;font-weight:800;color:{_comp_clr};">{comp_pct:.1f}%</div>
-        <div style="font-size:13px;font-weight:600;color:{_comp_clr};margin-top:5px;">{comp_icon} Overall Compliance</div>
+      <div style="flex:1;min-width:110px;border:2px solid {_comp_clr};border-radius:8px;padding:12px 8px;text-align:center;background:#fafff9;">
+        <div style="font-size:26px;font-weight:800;color:{_comp_clr};">{comp_pct:.1f}%</div>
+        <div style="font-size:12px;font-weight:600;color:{_comp_clr};margin-top:4px;">{comp_icon} Overall Compliance</div>
       </div>
     </div>
     """
@@ -258,11 +257,11 @@ def render_location_visit_details(df: pd.DataFrame) -> None:
     def _zone_badge(z):
         z_up = str(z).strip().upper()
         clr = _ZONE_COLORS.get(z_up, "#546E7A")
-        return f"<span style='background:{clr};color:#fff;font-weight:700;padding:3px 12px;border-radius:12px;font-size:13px;letter-spacing:.5px;'>{html.escape(z_up)}</span>"
+        return f"<span style='background:{clr};color:#fff;font-weight:700;padding:2px 8px;border-radius:10px;font-size:11px;letter-spacing:.4px;'>{html.escape(z_up)}</span>"
 
     def _comp_badge(pct):
         clr = _comp_color(pct)
-        return f"<span style='background:{clr};color:#fff;font-weight:700;padding:3px 12px;border-radius:12px;font-size:13px;'>{pct:.1f}%</span>"
+        return f"<span style='background:{clr};color:#fff;font-weight:700;padding:2px 8px;border-radius:10px;font-size:11px;'>{pct:.1f}%</span>"
 
     def _progress_bar(pct):
         fill = min(max(pct, 0), 100)
@@ -277,20 +276,20 @@ def render_location_visit_details(df: pd.DataFrame) -> None:
         _bg = "#ffffff" if i % 2 == 0 else "#f7fafd"
         _zone_rows += (
             f"<tr style='background:{_bg};'>"
-            f"<td style='padding:9px 12px;'>{_zone_badge(r.Zone)}</td>"
-            f"<td style='padding:9px 12px;text-align:center;font-weight:600;'>{int(r.Locations)}</td>"
-            f"<td style='padding:9px 12px;text-align:center;font-weight:600;'>{int(r.Total):,}</td>"
-            f"<td style='padding:9px 12px;text-align:center;font-weight:700;color:#c62828;font-size:15px;'>{int(r.Open):,}</td>"
-            f"<td style='padding:9px 12px;text-align:center;font-weight:700;color:#2e7d32;font-size:15px;'>{int(r.Closed):,}</td>"
-            f"<td style='padding:9px 12px;text-align:center;'>{_comp_badge(r._comp)}</td>"
-            f"<td style='padding:9px 16px;min-width:110px;'>{_progress_bar(r._comp)}</td>"
+            f"<td style='padding:6px 10px;'>{_zone_badge(r.Zone)}</td>"
+            f"<td style='padding:6px 10px;text-align:center;font-weight:600;'>{int(r.Locations)}</td>"
+            f"<td style='padding:6px 10px;text-align:center;font-weight:600;'>{int(r.Total):,}</td>"
+            f"<td style='padding:6px 10px;text-align:center;font-weight:700;color:#c62828;font-size:13px;'>{int(r.Open):,}</td>"
+            f"<td style='padding:6px 10px;text-align:center;font-weight:700;color:#2e7d32;font-size:13px;'>{int(r.Closed):,}</td>"
+            f"<td style='padding:6px 10px;text-align:center;'>{_comp_badge(r._comp)}</td>"
+            f"<td style='padding:6px 12px;min-width:90px;'>{_progress_bar(r._comp)}</td>"
             f"</tr>"
         )
 
-    _th = "padding:10px 12px;font-weight:700;border-bottom:2px solid #d5e2f3;font-size:14px;"
+    _th = "padding:7px 10px;font-weight:700;border-bottom:2px solid #d5e2f3;font-size:12px;"
     _zone_html = (
         "<div style='overflow-x:auto;margin:8px 0 16px 0;'>"
-        "<table style='border-collapse:collapse;width:100%;font-size:14px;'>"
+        "<table style='border-collapse:collapse;width:100%;font-size:12px;'>"
         f"<thead><tr style='background:#eaf2fb;'>"
         f"<th style='{_th}text-align:left;color:#003087;'>Zone</th>"
         f"<th style='{_th}text-align:center;color:#003087;'>Locations</th>"
@@ -427,25 +426,25 @@ def render_location_visit_details(df: pd.DataFrame) -> None:
         _bg = "#ffffff" if rank % 2 == 1 else "#f7fafd"
         _zrank_rows += (
             f"<tr style='background:{_bg};'>"
-            f"<td style='padding:9px 12px;text-align:center;font-weight:700;font-size:16px;'>{_medal}</td>"
-            f"<td style='padding:9px 12px;'>{_zone_badge(r.Zone)}</td>"
-            f"<td style='padding:9px 12px;text-align:center;font-weight:600;'>{int(r.Locations)}</td>"
-            f"<td style='padding:9px 12px;text-align:center;font-weight:700;color:#c62828;'>{int(r.Open):,}</td>"
-            f"<td style='padding:9px 12px;text-align:center;font-weight:700;color:#2e7d32;'>{int(r.Closed):,}</td>"
-            f"<td style='padding:9px 12px;text-align:center;'>{_comp_badge(r._comp)}</td>"
+            f"<td style='padding:5px 8px;text-align:center;font-weight:700;font-size:14px;'>{_medal}</td>"
+            f"<td style='padding:5px 8px;'>{_zone_badge(r.Zone)}</td>"
+            f"<td style='padding:5px 8px;text-align:center;font-weight:600;'>{int(r.Locations)}</td>"
+            f"<td style='padding:5px 8px;text-align:center;font-weight:700;color:#c62828;'>{int(r.Open):,}</td>"
+            f"<td style='padding:5px 8px;text-align:center;font-weight:700;color:#2e7d32;'>{int(r.Closed):,}</td>"
+            f"<td style='padding:5px 8px;text-align:center;'>{_comp_badge(r._comp)}</td>"
             f"</tr>"
         )
 
     _zrank_html = (
         "<div style='overflow-x:auto;margin:4px 0 12px 0;'>"
-        "<table style='border-collapse:collapse;width:100%;font-size:14px;'>"
+        "<table style='border-collapse:collapse;width:100%;font-size:12px;'>"
         f"<thead><tr style='background:#eaf2fb;'>"
         f"<th style='{_th}text-align:center;color:#003087;'>Rank</th>"
         f"<th style='{_th}text-align:left;color:#003087;'>Zone</th>"
-        f"<th style='{_th}text-align:center;color:#003087;'>Locations</th>"
+        f"<th style='{_th}text-align:center;color:#003087;'>Locs</th>"
         f"<th style='{_th}text-align:center;color:#c62828;'>Open</th>"
         f"<th style='{_th}text-align:center;color:#2e7d32;'>Closed</th>"
-        f"<th style='{_th}text-align:center;color:#003087;'>Compliance %</th>"
+        f"<th style='{_th}text-align:center;color:#003087;'>Compliance</th>"
         f"</tr></thead><tbody>{_zrank_rows}</tbody></table></div>"
     )
 
@@ -459,19 +458,19 @@ def render_location_visit_details(df: pd.DataFrame) -> None:
         _bg = "#ffffff" if rank % 2 == 1 else "#f7fafd"
         _lrank_rows += (
             f"<tr style='background:{_bg};'>"
-            f"<td style='padding:9px 12px;text-align:center;font-weight:700;font-size:15px;'>{_medal}</td>"
-            f"<td style='padding:9px 12px;font-weight:600;'>{html.escape(str(r['Plant Desc.']))}</td>"
-            f"<td style='padding:9px 12px;text-align:center;'>{_zone_badge(r.Zone)}</td>"
-            f"<td style='padding:9px 12px;text-align:center;font-weight:600;'>{int(r.Total):,}</td>"
-            f"<td style='padding:9px 12px;text-align:center;font-weight:700;color:#c62828;'>{int(r.Open):,}</td>"
-            f"<td style='padding:9px 12px;text-align:center;font-weight:700;color:#2e7d32;'>{int(r.Closed):,}</td>"
-            f"<td style='padding:9px 12px;text-align:center;'>{_comp_badge(r._pct)}</td>"
+            f"<td style='padding:5px 8px;text-align:center;font-weight:700;font-size:13px;'>{_medal}</td>"
+            f"<td style='padding:5px 8px;font-weight:600;'>{html.escape(str(r['Plant Desc.']))}</td>"
+            f"<td style='padding:5px 8px;text-align:center;'>{_zone_badge(r.Zone)}</td>"
+            f"<td style='padding:5px 8px;text-align:center;font-weight:600;'>{int(r.Total):,}</td>"
+            f"<td style='padding:5px 8px;text-align:center;font-weight:700;color:#c62828;'>{int(r.Open):,}</td>"
+            f"<td style='padding:5px 8px;text-align:center;font-weight:700;color:#2e7d32;'>{int(r.Closed):,}</td>"
+            f"<td style='padding:5px 8px;text-align:center;'>{_comp_badge(r._pct)}</td>"
             f"</tr>"
         )
 
     _lrank_html = (
         "<div style='overflow-x:auto;margin:4px 0 12px 0;max-height:460px;overflow-y:auto;'>"
-        "<table style='border-collapse:collapse;width:100%;font-size:14px;'>"
+        "<table style='border-collapse:collapse;width:100%;font-size:12px;'>"
         f"<thead><tr style='background:#eaf2fb;position:sticky;top:0;z-index:1;'>"
         f"<th style='{_th}text-align:center;color:#003087;'>Rank</th>"
         f"<th style='{_th}text-align:left;color:#003087;'>Location</th>"
@@ -479,7 +478,7 @@ def render_location_visit_details(df: pd.DataFrame) -> None:
         f"<th style='{_th}text-align:center;color:#003087;'>Total</th>"
         f"<th style='{_th}text-align:center;color:#c62828;'>Open</th>"
         f"<th style='{_th}text-align:center;color:#2e7d32;'>Closed</th>"
-        f"<th style='{_th}text-align:center;color:#003087;'>Compliance %</th>"
+        f"<th style='{_th}text-align:center;color:#003087;'>Compliance</th>"
         f"</tr></thead><tbody>{_lrank_rows}</tbody></table></div>"
     )
 
@@ -3369,32 +3368,40 @@ def render_sidebar(df_plant: pd.DataFrame) -> tuple:
 
         st.markdown("<hr/>", unsafe_allow_html=True)
 
-        st.markdown('<p class="sb-nav-lbl">&#128205; Navigation Filters</p>', unsafe_allow_html=True)
+        _sb_lv_drill = st.session_state.get("location_visit_page") == "drilldown"
 
-        all_zones = sorted(df_plant["Zone Name"].dropna().unique().tolist())
-        selected_zones = st.multiselect(
-            "Zone",
-            options=all_zones,
-            default=[],
-            placeholder="All Zones",
-        )
+        if not _sb_lv_drill:
+            st.markdown('<p class="sb-nav-lbl">&#128205; Navigation Filters</p>', unsafe_allow_html=True)
 
-        if selected_zones:
-            avail_plants = sorted(
-                df_plant[df_plant["Zone Name"].isin(selected_zones)]
-                ["Plant Name"].dropna().unique().tolist()
+            all_zones = sorted(df_plant["Zone Name"].dropna().unique().tolist())
+            selected_zones = st.multiselect(
+                "Zone",
+                options=all_zones,
+                default=[],
+                placeholder="All Zones",
             )
+
+            if selected_zones:
+                avail_plants = sorted(
+                    df_plant[df_plant["Zone Name"].isin(selected_zones)]
+                    ["Plant Name"].dropna().unique().tolist()
+                )
+            else:
+                avail_plants = sorted(df_plant["Plant Name"].dropna().unique().tolist())
+
+            selected_plants = st.multiselect(
+                "Plant / Location",
+                options=sorted(avail_plants),
+                default=[],
+                placeholder="All Plants",
+            )
+
+            st.markdown("<hr/>", unsafe_allow_html=True)
         else:
+            all_zones = sorted(df_plant["Zone Name"].dropna().unique().tolist())
+            selected_zones = []
             avail_plants = sorted(df_plant["Plant Name"].dropna().unique().tolist())
-
-        selected_plants = st.multiselect(
-            "Plant / Location",
-            options=sorted(avail_plants),
-            default=[],
-            placeholder="All Plants",
-        )
-
-        st.markdown("<hr/>", unsafe_allow_html=True)
+            selected_plants = []
 
         st.markdown('<p class="sb-nav-lbl">&#128197; Data As-Of Date</p>', unsafe_allow_html=True)
         from datetime import timedelta as _td
@@ -3507,7 +3514,7 @@ def _render_html_table(df: pd.DataFrame, col_labels: dict = None, max_height: in
         or st.session_state.get("dummy_tank_clicked") is True
         or st.session_state.get("pl_unblock_clicked") is True
     )
-    font_boost = 4 if is_drilldown_view else 0
+    font_boost = -2 if is_drilldown_view else 0
     header_font = 16 + font_boost
     cell_font = 15 + font_boost
     effective_height = 1100 if is_maximized else max_height
