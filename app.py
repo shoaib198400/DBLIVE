@@ -1,4 +1,4 @@
-import base64
+﻿import base64
 import hashlib
 import inspect
 import pandas as pd
@@ -204,18 +204,42 @@ def render_location_visit_details(df: pd.DataFrame) -> None:
     comp_pct = (closed_r / total_r * 100) if total_r > 0 else 0.0
     comp_icon = "✅" if comp_pct >= 75 else ("⚠️" if comp_pct >= 50 else "❌")
 
-    # ── 5-card KPI summary ────────────────────────────────────────────────────
+    def _comp_color(pct):
+        return "#2e7d32" if pct >= 75 else ("#F57C00" if pct >= 50 else "#c62828")
+
+    _comp_clr = _comp_color(comp_pct)
+
+    # ── 5-card KPI summary (colored HTML cards) ───────────────────────────────
     st.markdown("<div class='sec-title'>&#128202; Overall Summary</div>", unsafe_allow_html=True)
-    k1, k2, k3, k4, k5 = st.columns(5)
-    k1.metric("Audited Locations", f"{audits:,}")
-    k2.metric("Total Recommendations", f"{total_r:,}")
-    k3.metric("\U0001f534 Open", f"{open_r:,}")
-    k4.metric("\U0001f7e2 Closed / Complied", f"{closed_r:,}")
-    k5.metric(f"Overall Compliance {comp_icon}", f"{comp_pct:.1f}%")
+    _cards_html = f"""
+    <div style="display:flex;gap:12px;margin:8px 0 18px 0;flex-wrap:wrap;">
+      <div style="flex:1;min-width:120px;border:2.5px solid #003087;border-radius:10px;padding:16px 10px;text-align:center;background:#f0f7ff;">
+        <div style="font-size:30px;font-weight:800;color:#003087;">{audits:,}</div>
+        <div style="font-size:13px;font-weight:600;color:#003087;margin-top:5px;">&#128506; Audited Locations</div>
+      </div>
+      <div style="flex:1;min-width:120px;border:2.5px solid #424242;border-radius:10px;padding:16px 10px;text-align:center;background:#f9f9f9;">
+        <div style="font-size:30px;font-weight:800;color:#424242;">{total_r:,}</div>
+        <div style="font-size:13px;font-weight:600;color:#424242;margin-top:5px;">&#128203; Total Recommendations</div>
+      </div>
+      <div style="flex:1;min-width:120px;border:2.5px solid #c62828;border-radius:10px;padding:16px 10px;text-align:center;background:#fff5f5;">
+        <div style="font-size:30px;font-weight:800;color:#c62828;">{open_r:,}</div>
+        <div style="font-size:13px;font-weight:600;color:#c62828;margin-top:5px;">&#128308; Open Recommendations</div>
+      </div>
+      <div style="flex:1;min-width:120px;border:2.5px solid #2e7d32;border-radius:10px;padding:16px 10px;text-align:center;background:#f0fff4;">
+        <div style="font-size:30px;font-weight:800;color:#2e7d32;">{closed_r:,}</div>
+        <div style="font-size:13px;font-weight:600;color:#2e7d32;margin-top:5px;">&#128994; Closed / Complied</div>
+      </div>
+      <div style="flex:1;min-width:120px;border:2.5px solid {_comp_clr};border-radius:10px;padding:16px 10px;text-align:center;background:#fafff9;">
+        <div style="font-size:30px;font-weight:800;color:{_comp_clr};">{comp_pct:.1f}%</div>
+        <div style="font-size:13px;font-weight:600;color:{_comp_clr};margin-top:5px;">{comp_icon} Overall Compliance</div>
+      </div>
+    </div>
+    """
+    st.markdown(_cards_html, unsafe_allow_html=True)
 
     st.markdown("---")
 
-    # ── Zone-wise Summary ─────────────────────────────────────────────────────
+    # ── Zone-wise Summary (colored badges, red/green numbers, compliance badge + progress bar) ──
     st.markdown("<div class='sec-title'>&#128506; Zone-wise Summary</div>", unsafe_allow_html=True)
     _zg = dv.assign(_t=_n(dv["TotalRecomms"]), _c=_n(dv["ClosedRecomms"]), _o=_n(dv["OpenRecomms"]))
     zone_tbl = (
@@ -224,10 +248,62 @@ def render_location_visit_details(df: pd.DataFrame) -> None:
         .sort_values("Closed", ascending=False)
         .reset_index(drop=True)
     )
-    zone_tbl["Compliance %"] = zone_tbl.apply(
-        lambda r: f"{r.Closed/r.Total*100:.1f}%" if r.Total > 0 else "N/A", axis=1
+    zone_tbl["_comp"] = zone_tbl.apply(lambda r: r.Closed/r.Total*100 if r.Total > 0 else 0.0, axis=1)
+
+    _ZONE_COLORS = {
+        "COZ": "#E65100", "NOZ": "#003087", "SOZ": "#2e7d32",
+        "WOZ": "#AD1457", "EOZ": "#6A1B9A", "Unmapped": "#546E7A",
+    }
+
+    def _zone_badge(z):
+        z_up = str(z).strip().upper()
+        clr = _ZONE_COLORS.get(z_up, "#546E7A")
+        return f"<span style='background:{clr};color:#fff;font-weight:700;padding:3px 12px;border-radius:12px;font-size:13px;letter-spacing:.5px;'>{html.escape(z_up)}</span>"
+
+    def _comp_badge(pct):
+        clr = _comp_color(pct)
+        return f"<span style='background:{clr};color:#fff;font-weight:700;padding:3px 12px;border-radius:12px;font-size:13px;'>{pct:.1f}%</span>"
+
+    def _progress_bar(pct):
+        fill = min(max(pct, 0), 100)
+        clr = _comp_color(pct)
+        return (
+            f"<div style='background:#e0e0e0;border-radius:6px;height:12px;width:100%;min-width:80px;'>"
+            f"<div style='background:{clr};width:{fill:.0f}%;height:12px;border-radius:6px;'></div></div>"
+        )
+
+    _zone_rows = ""
+    for i, r in zone_tbl.iterrows():
+        _bg = "#ffffff" if i % 2 == 0 else "#f7fafd"
+        _zone_rows += (
+            f"<tr style='background:{_bg};'>"
+            f"<td style='padding:9px 12px;'>{_zone_badge(r.Zone)}</td>"
+            f"<td style='padding:9px 12px;text-align:center;font-weight:600;'>{int(r.Locations)}</td>"
+            f"<td style='padding:9px 12px;text-align:center;font-weight:600;'>{int(r.Total):,}</td>"
+            f"<td style='padding:9px 12px;text-align:center;font-weight:700;color:#c62828;font-size:15px;'>{int(r.Open):,}</td>"
+            f"<td style='padding:9px 12px;text-align:center;font-weight:700;color:#2e7d32;font-size:15px;'>{int(r.Closed):,}</td>"
+            f"<td style='padding:9px 12px;text-align:center;'>{_comp_badge(r._comp)}</td>"
+            f"<td style='padding:9px 16px;min-width:110px;'>{_progress_bar(r._comp)}</td>"
+            f"</tr>"
+        )
+
+    _th = "padding:10px 12px;font-weight:700;border-bottom:2px solid #d5e2f3;font-size:14px;"
+    _zone_html = (
+        "<div style='overflow-x:auto;margin:8px 0 16px 0;'>"
+        "<table style='border-collapse:collapse;width:100%;font-size:14px;'>"
+        f"<thead><tr style='background:#eaf2fb;'>"
+        f"<th style='{_th}text-align:left;color:#003087;'>Zone</th>"
+        f"<th style='{_th}text-align:center;color:#003087;'>Locations</th>"
+        f"<th style='{_th}text-align:center;color:#003087;'>Total Recomms</th>"
+        f"<th style='{_th}text-align:center;color:#c62828;'>Open</th>"
+        f"<th style='{_th}text-align:center;color:#2e7d32;'>Closed</th>"
+        f"<th style='{_th}text-align:center;color:#003087;'>Compliance %</th>"
+        f"<th style='{_th}text-align:left;color:#003087;'>Progress</th>"
+        f"</tr></thead>"
+        f"<tbody>{_zone_rows}</tbody>"
+        "</table></div>"
     )
-    _render_html_table(zone_tbl, max_height=350)
+    st.markdown(_zone_html, unsafe_allow_html=True)
 
     # ── Quarter-wise Summary ──────────────────────────────────────────────────
     st.markdown("<div class='sec-title'>&#128197; Quarter-wise Summary</div>", unsafe_allow_html=True)
@@ -245,7 +321,7 @@ def render_location_visit_details(df: pd.DataFrame) -> None:
 
     # ── Audit Detail Table with observation drill-through ─────────────────────
     st.markdown("<div class='sec-title'>&#128203; Audit Detail by Location</div>", unsafe_allow_html=True)
-    st.caption("Select an audit below and click ‘View Observations’ to see full observations, recommendations, and action-taken details.")
+    st.caption("Select an audit below and click 'View Observations' to see full observations, recommendations, and action-taken details.")
 
     _req = ["Planning Plant", "Plant Desc.", "Zone", "FY", "Quarter",
             "Audit Number", "Audit Start Date", "Audit End Date",
@@ -284,22 +360,21 @@ def render_location_visit_details(df: pd.DataFrame) -> None:
 
     st.markdown("---")
 
-    # ── Performance Analysis ──────────────────────────────────────────────────
+    # ── Performance Analysis (bar charts) ────────────────────────────────────
     st.markdown(
         "<div class='sec-title'>&#128202; Performance Analysis &mdash; Zone &amp; Location Comparison</div>",
         unsafe_allow_html=True,
     )
-    st.caption("Quickly identify top-performing and under-performing zones and locations. The 75% dashed line marks the target threshold.")
+    st.caption("Compliance by zone and location. The 75% dashed line marks the target threshold.")
 
     _zone_c = zone_tbl.copy()
-    _zone_c["_pct"] = _zone_c.apply(lambda r: r.Closed/r.Total*100 if r.Total > 0 else 0.0, axis=1)
     fig_zone = px.bar(
-        _zone_c, x="Zone", y="_pct",
-        color="_pct", color_continuous_scale=["#c62828","#f57c00","#2e7d32"],
+        _zone_c, x="Zone", y="_comp",
+        color="_comp", color_continuous_scale=["#c62828","#f57c00","#2e7d32"],
         range_color=[0, 100],
-        text=_zone_c["_pct"].apply(lambda x: f"{x:.1f}%"),
+        text=_zone_c["_comp"].apply(lambda x: f"{x:.1f}%"),
         title="Compliance % by Zone",
-        labels={"_pct": "Compliance %"},
+        labels={"_comp": "Compliance %"},
     )
     fig_zone.add_hline(y=75, line_dash="dash", line_color="#2e7d32",
                        annotation_text="75% Target", annotation_position="top right")
@@ -313,19 +388,19 @@ def render_location_visit_details(df: pd.DataFrame) -> None:
         _lg.groupby(["Planning Plant","Plant Desc.","Zone"], as_index=False)
         .agg(Total=("_t","sum"), Closed=("_c","sum"), Open=("_o","sum"))
     )
-    loc_chart["Compliance %"] = loc_chart.apply(
+    loc_chart["_pct"] = loc_chart.apply(
         lambda r: r.Closed/r.Total*100 if r.Total > 0 else 0.0, axis=1
     )
     loc_chart["Label"] = loc_chart["Plant Desc."].astype(str).str[:22]
-    loc_chart = loc_chart.sort_values("Compliance %")
+    loc_chart = loc_chart.sort_values("_pct")
     fig_loc = px.bar(
-        loc_chart, x="Compliance %", y="Label",
+        loc_chart, x="_pct", y="Label",
         orientation="h",
-        color="Compliance %", color_continuous_scale=["#c62828","#f57c00","#2e7d32"],
+        color="_pct", color_continuous_scale=["#c62828","#f57c00","#2e7d32"],
         range_color=[0, 100],
-        text=loc_chart["Compliance %"].apply(lambda x: f"{x:.1f}%"),
+        text=loc_chart["_pct"].apply(lambda x: f"{x:.1f}%"),
         title="Location-wise Compliance %",
-        labels={"Compliance %": "Compliance %", "Label": ""},
+        labels={"_pct": "Compliance %", "Label": ""},
     )
     fig_loc.add_vline(x=75, line_dash="dash", line_color="#2e7d32", annotation_text="75%")
     fig_loc.update_traces(textposition="outside")
@@ -339,23 +414,82 @@ def render_location_visit_details(df: pd.DataFrame) -> None:
     with ch2:
         st.plotly_chart(fig_loc, use_container_width=True)
 
-    # Top 5 / Bottom 5 performers
-    st.markdown("<div class='sec-title'>&#127942; Top &amp; Bottom Performers</div>", unsafe_allow_html=True)
-    _perf = loc_chart.sort_values("Compliance %", ascending=False).copy()
-    _perf["Compliance %"] = _perf["Compliance %"].apply(lambda x: f"{x:.1f}%")
-    _perf_disp = _perf[["Plant Desc.","Zone","Total","Open","Closed","Compliance %"]].rename(
-        columns={"Plant Desc.": "Location"}
-    )
-    top5_col, bot5_col = st.columns(2)
-    with top5_col:
-        st.markdown("**\U0001f7e2 Top 5 Performers**")
-        _render_html_table(_perf_disp.head(5).reset_index(drop=True), max_height=250)
-    with bot5_col:
-        st.markdown("**\U0001f534 Bottom 5 Performers**")
-        _render_html_table(
-            _perf_disp.tail(5).sort_values("Compliance %").reset_index(drop=True),
-            max_height=250,
+    # ── Zone-wise & Location-wise Compliance Ranking ──────────────────────────
+    st.markdown("<div class='sec-title'>&#127942; Zone-wise &amp; Location-wise Compliance Ranking</div>", unsafe_allow_html=True)
+
+    # Zone ranking table
+    _zr = zone_tbl.copy().sort_values("_comp", ascending=False).reset_index(drop=True)
+
+    _zrank_rows = ""
+    for i, r in _zr.iterrows():
+        rank = i + 1
+        _medal = "&#129351;" if rank == 1 else ("&#129352;" if rank == 2 else ("&#129353;" if rank == 3 else str(rank)))
+        _bg = "#ffffff" if rank % 2 == 1 else "#f7fafd"
+        _zrank_rows += (
+            f"<tr style='background:{_bg};'>"
+            f"<td style='padding:9px 12px;text-align:center;font-weight:700;font-size:16px;'>{_medal}</td>"
+            f"<td style='padding:9px 12px;'>{_zone_badge(r.Zone)}</td>"
+            f"<td style='padding:9px 12px;text-align:center;font-weight:600;'>{int(r.Locations)}</td>"
+            f"<td style='padding:9px 12px;text-align:center;font-weight:700;color:#c62828;'>{int(r.Open):,}</td>"
+            f"<td style='padding:9px 12px;text-align:center;font-weight:700;color:#2e7d32;'>{int(r.Closed):,}</td>"
+            f"<td style='padding:9px 12px;text-align:center;'>{_comp_badge(r._comp)}</td>"
+            f"</tr>"
         )
+
+    _zrank_html = (
+        "<div style='overflow-x:auto;margin:4px 0 12px 0;'>"
+        "<table style='border-collapse:collapse;width:100%;font-size:14px;'>"
+        f"<thead><tr style='background:#eaf2fb;'>"
+        f"<th style='{_th}text-align:center;color:#003087;'>Rank</th>"
+        f"<th style='{_th}text-align:left;color:#003087;'>Zone</th>"
+        f"<th style='{_th}text-align:center;color:#003087;'>Locations</th>"
+        f"<th style='{_th}text-align:center;color:#c62828;'>Open</th>"
+        f"<th style='{_th}text-align:center;color:#2e7d32;'>Closed</th>"
+        f"<th style='{_th}text-align:center;color:#003087;'>Compliance %</th>"
+        f"</tr></thead><tbody>{_zrank_rows}</tbody></table></div>"
+    )
+
+    # Location ranking table (all locations, scrollable)
+    _lr = loc_chart.copy().sort_values("_pct", ascending=False).reset_index(drop=True)
+
+    _lrank_rows = ""
+    for i, r in _lr.iterrows():
+        rank = i + 1
+        _medal = "&#129351;" if rank == 1 else ("&#129352;" if rank == 2 else ("&#129353;" if rank == 3 else str(rank)))
+        _bg = "#ffffff" if rank % 2 == 1 else "#f7fafd"
+        _lrank_rows += (
+            f"<tr style='background:{_bg};'>"
+            f"<td style='padding:9px 12px;text-align:center;font-weight:700;font-size:15px;'>{_medal}</td>"
+            f"<td style='padding:9px 12px;font-weight:600;'>{html.escape(str(r['Plant Desc.']))}</td>"
+            f"<td style='padding:9px 12px;text-align:center;'>{_zone_badge(r.Zone)}</td>"
+            f"<td style='padding:9px 12px;text-align:center;font-weight:600;'>{int(r.Total):,}</td>"
+            f"<td style='padding:9px 12px;text-align:center;font-weight:700;color:#c62828;'>{int(r.Open):,}</td>"
+            f"<td style='padding:9px 12px;text-align:center;font-weight:700;color:#2e7d32;'>{int(r.Closed):,}</td>"
+            f"<td style='padding:9px 12px;text-align:center;'>{_comp_badge(r._pct)}</td>"
+            f"</tr>"
+        )
+
+    _lrank_html = (
+        "<div style='overflow-x:auto;margin:4px 0 12px 0;max-height:460px;overflow-y:auto;'>"
+        "<table style='border-collapse:collapse;width:100%;font-size:14px;'>"
+        f"<thead><tr style='background:#eaf2fb;position:sticky;top:0;z-index:1;'>"
+        f"<th style='{_th}text-align:center;color:#003087;'>Rank</th>"
+        f"<th style='{_th}text-align:left;color:#003087;'>Location</th>"
+        f"<th style='{_th}text-align:center;color:#003087;'>Zone</th>"
+        f"<th style='{_th}text-align:center;color:#003087;'>Total</th>"
+        f"<th style='{_th}text-align:center;color:#c62828;'>Open</th>"
+        f"<th style='{_th}text-align:center;color:#2e7d32;'>Closed</th>"
+        f"<th style='{_th}text-align:center;color:#003087;'>Compliance %</th>"
+        f"</tr></thead><tbody>{_lrank_rows}</tbody></table></div>"
+    )
+
+    zr_col, lr_col = st.columns([1, 2])
+    with zr_col:
+        st.markdown("**Zone-wise Ranking**")
+        st.markdown(_zrank_html, unsafe_allow_html=True)
+    with lr_col:
+        st.markdown("**Location-wise Ranking (All Locations)**")
+        st.markdown(_lrank_html, unsafe_allow_html=True)
 
     st.markdown("---")
 
@@ -386,7 +520,7 @@ def render_location_visit_details(df: pd.DataFrame) -> None:
         file_prefix="location_visit_drilldown",
         sheets={
             "Audit Detail":     audit_tbl.reset_index(drop=True),
-            "Zone Summary":     zone_tbl.reset_index(drop=True),
+            "Zone Summary":     zone_tbl.drop(columns=["_comp"]).reset_index(drop=True),
             "Quarter Summary":  qtr_tbl.reset_index(drop=True),
         },
         key="dl_loc_visit_drill",
@@ -3470,19 +3604,24 @@ def render_dashboard(
 
     _aod_label = as_of_date.strftime("%d %b %Y") if as_of_date else ""
     render_header(subtitle=f"Data as of: {_aod_label}" if _aod_label else "")
-    # ── Navigation Filters (Zone & Plant) ────────────────────────────────────
-    st.markdown('<div class="sec-title">&#128205; Navigation Filters</div>', unsafe_allow_html=True)
-    filters_col1, filters_col2 = st.columns([1, 1])
-    zone_list = sorted(df_plant["Zone Name"].dropna().unique().tolist())
-    plant_list = sorted(df_plant["Plant Name"].dropna().unique().tolist())
-    with filters_col1:
-        selected_zone = st.selectbox("Select Zone", ["All Zones"] + zone_list, key="zone_filter")
-    with filters_col2:
-        if selected_zone != "All Zones":
-            filtered_plants = sorted(df_plant[df_plant["Zone Name"] == selected_zone]["Plant Name"].dropna().unique().tolist())
-        else:
-            filtered_plants = plant_list
-        selected_plant = st.selectbox("Select Plant / Location", ["All Plants"] + filtered_plants, key="plant_filter")
+    # ── Navigation Filters (Zone & Plant) — hidden when on Location Visit drill-down ──
+    _is_lv_drilldown = st.session_state.get("location_visit_page") == "drilldown"
+    if not _is_lv_drilldown:
+        st.markdown('<div class="sec-title">&#128205; Navigation Filters</div>', unsafe_allow_html=True)
+        filters_col1, filters_col2 = st.columns([1, 1])
+        zone_list = sorted(df_plant["Zone Name"].dropna().unique().tolist())
+        plant_list = sorted(df_plant["Plant Name"].dropna().unique().tolist())
+        with filters_col1:
+            selected_zone = st.selectbox("Select Zone", ["All Zones"] + zone_list, key="zone_filter")
+        with filters_col2:
+            if selected_zone != "All Zones":
+                filtered_plants = sorted(df_plant[df_plant["Zone Name"] == selected_zone]["Plant Name"].dropna().unique().tolist())
+            else:
+                filtered_plants = plant_list
+            selected_plant = st.selectbox("Select Plant / Location", ["All Plants"] + filtered_plants, key="plant_filter")
+    else:
+        selected_zone = "All Zones"
+        selected_plant = "All Plants"
 
     # --- LOCATION VISIT KPI LOGIC (after navigation filters) ---
     df_loc_filtered = pd.DataFrame()
@@ -3521,18 +3660,18 @@ def render_dashboard(
                 .copy()
                 .assign(**{"Plant Code": lambda d: d["Plant Code"].astype(str).str.strip().str.replace(r"\.0$", "", regex=True)})
             )
+            # Save file's Zone (SBU Zone) before merge — matches Sr. Manager logic
+            _file_zone = df_loc_work["Zone"].copy() if "Zone" in df_loc_work.columns else None
             df_loc_work = df_loc_work.merge(
                 plant_map,
                 left_on="Planning Plant",
                 right_on="Plant Code",
                 how="left",
             )
-            df_loc_work["Zone"] = (
-                df_loc_work["Zone Name"]
-                .fillna("Unmapped")
-                .astype(str)
-                .str.strip()
-            )
+            # Restore file Zone (don't override with PlantMaster Zone Name)
+            if _file_zone is not None:
+                df_loc_work["Zone"] = _file_zone.values
+            df_loc_work["Zone"] = df_loc_work["Zone"].fillna("Unmapped").astype(str).str.strip()
             df_loc_work["Zone Name"] = df_loc_work["Zone"]
             df_loc_work["Plant Name"] = (
                 df_loc_work["Plant Name"]
