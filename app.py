@@ -11,13 +11,139 @@ import streamlit as st
 import warnings
 warnings.filterwarnings("ignore", category=UserWarning, module="openpyxl")
 
-def render_location_visit_details(df):
-    st.markdown("<div class='sec-title'>&#128205; Location Visit - %Compliance &#8212; Drill Down</div>", unsafe_allow_html=True)
+def render_location_visit_observation_detail() -> None:
+    """Show raw CAPA-level observation/recommendation detail for a selected audit."""
+    audit_no   = st.session_state.get("lv_obs_audit_no", "")
+    plant      = st.session_state.get("lv_obs_plant", "")
+    plant_desc = st.session_state.get("lv_obs_plant_desc", "")
+    zone       = st.session_state.get("lv_obs_zone", "")
+    fy         = st.session_state.get("lv_obs_fy", "")
+    quarter    = st.session_state.get("lv_obs_quarter", "")
 
     back_col, _ = st.columns([1, 7])
     with back_col:
-        if st.button("&#11013; Back to Dashboard", key="btn_back_location_visit"):
+        if st.button("⬅ Back to Audit List", key="btn_back_obs_detail"):
+            st.session_state["lv_sub_page"] = "summary"
+            st.rerun()
+
+    st.markdown(
+        f"<div class='sec-title'>&#128203; Observation Detail &mdash; "
+        f"{html.escape(str(plant_desc))} ({html.escape(str(plant))})</div>",
+        unsafe_allow_html=True,
+    )
+    st.markdown(
+        f"**Zone:** {html.escape(str(zone))} &nbsp;|&nbsp; "
+        f"**Period:** {quarter} FY{fy} &nbsp;|&nbsp; "
+        f"**Audit No.:** {html.escape(str(audit_no))}",
+        unsafe_allow_html=True,
+    )
+
+    if not os.path.exists(LOCATION_VISIT_PATH):
+        st.warning("Location Visit file not found.")
+        return
+
+    try:
+        _ext = os.path.splitext(LOCATION_VISIT_PATH)[1].lower()
+        try:
+            df_raw = pd.read_excel(LOCATION_VISIT_PATH, engine="xlrd" if _ext == ".xls" else "openpyxl")
+        except Exception:
+            df_raw = pd.read_excel(LOCATION_VISIT_PATH, engine="openpyxl" if _ext == ".xls" else "xlrd")
+        df_raw.columns = df_raw.columns.astype(str).str.strip()
+    except Exception as e:
+        st.error(f"Could not load raw data: {e}")
+        return
+
+    _plant_col = next((c for c in ["Planning Plant", "Plant Code"] if c in df_raw.columns), None)
+    _audit_col = next((c for c in ["Audit Number", "AuditNumber"] if c in df_raw.columns), None)
+    _capa_col  = next((c for c in ["CAPA Status", "Capa Status"] if c in df_raw.columns), None)
+
+    if not _audit_col:
+        st.warning("Cannot find Audit Number column in raw file.")
+        return
+
+    mask = df_raw[_audit_col].astype(str).str.strip() == str(audit_no).strip()
+    if _plant_col:
+        mask &= (
+            df_raw[_plant_col].astype(str).str.strip().str.replace(r"\.0$", "", regex=True)
+            == str(plant).strip()
+        )
+    df_audit = df_raw[mask].copy()
+
+    if df_audit.empty:
+        st.warning(f"No detail rows found for Audit {audit_no} / Plant {plant}.")
+        return
+
+    # Summary KPIs at top
+    if _capa_col:
+        _CLOSED = {"Closed", "Completed"}
+        _OPEN   = {"Open", "Reopened"}
+        statuses  = df_audit[_capa_col].astype(str).str.strip()
+        valid     = statuses[statuses.isin(_CLOSED | _OPEN)]
+        total_c   = len(valid)
+        closed_c  = int(statuses.isin(_CLOSED).sum())
+        open_c    = int(statuses.isin(_OPEN).sum())
+        comp_pct  = (closed_c / total_c * 100) if total_c > 0 else 0.0
+        comp_icon = "✅" if comp_pct >= 75 else ("⚠️" if comp_pct >= 50 else "❌")
+        sc1, sc2, sc3, sc4 = st.columns(4)
+        sc1.metric("Total Recommendations", total_c)
+        sc2.metric("\U0001f7e2 Closed / Complied", closed_c)
+        sc3.metric("\U0001f534 Open", open_c)
+        sc4.metric(f"Compliance {comp_icon}", f"{comp_pct:.1f}%")
+
+    # Select display columns
+    _obs_cols = [c for c in [
+        "CAPA Number", "Observation Comment", "Recommendation",
+        "CAPA Status", "Risk Category", "Severity Code",
+        "Target Date", "Revised Target Date",
+        "Action Taken Current Status", "Root Cause Analysis",
+        "Action Closed by Name", "Action Closed Date",
+    ] if c in df_audit.columns]
+    if not _obs_cols:
+        _obs_cols = list(df_audit.columns)[:12]
+
+    df_obs = df_audit[_obs_cols].reset_index(drop=True)
+
+    # Emoji-coded CAPA Status (plain text, compatible with _render_html_table)
+    if "CAPA Status" in df_obs.columns:
+        def _fmt_s(v):
+            v = str(v).strip()
+            if v in ("Closed", "Completed"): return f"✅ {v}"
+            if v == "Open":                  return f"\U0001f534 {v}"
+            if v == "Reopened":              return f"⚠️ {v}"
+            return v
+        df_obs["CAPA Status"] = df_obs["CAPA Status"].apply(_fmt_s)
+
+    st.markdown(f"**{len(df_obs)} Recommendation(s) for this Audit**")
+    _render_html_table(df_obs, max_height=650)
+
+    _download_excel_button(
+        label="⬇  Download Observation Detail  (.xlsx)",
+        file_prefix=f"obs_{str(audit_no).replace('/', '_').replace(' ', '_')}",
+        sheets={"Observations": df_audit[_obs_cols].reset_index(drop=True)},
+        key="dl_obs_detail",
+    )
+
+
+def render_location_visit_details(df: pd.DataFrame) -> None:
+    """
+    Level-1 drill-down: Location Visit & Compliance Analysis.
+    df: aggregated audit-level data (one row per plant+audit), with FY and Quarter columns.
+    """
+    # Sub-page routing — observation detail lives inside this drill-down
+    if st.session_state.get("lv_sub_page") == "obs_detail":
+        render_location_visit_observation_detail()
+        return
+
+    # ── Header & back button ──────────────────────────────────────────────────
+    st.markdown(
+        "<div class='sec-title'>&#128205; Location Visit &amp; Compliance Analysis</div>",
+        unsafe_allow_html=True,
+    )
+    back_col, _ = st.columns([1, 7])
+    with back_col:
+        if st.button("⬅ Back to Dashboard", key="btn_back_location_visit"):
             st.session_state["location_visit_page"] = "main"
+            st.session_state["lv_sub_page"] = "summary"
             st.session_state["selected_tile"] = None
             st.session_state["dummy_tank_clicked"] = False
             st.session_state["pl_unblock_clicked"] = False
@@ -25,226 +151,246 @@ def render_location_visit_details(df):
             st.rerun()
 
     if df is None or df.empty:
-        st.warning("No data available after applying filters.")
+        st.warning("No data available. Check file upload or data source.")
         return
 
-    def _to_num(series: pd.Series) -> pd.Series:
-        return pd.to_numeric(series, errors="coerce").fillna(0)
+    # Ensure FY / Quarter columns (derive from Audit Start Date if absent)
+    if "FY" not in df.columns or "Quarter" not in df.columns:
+        def _fy_q(dt):
+            if pd.isna(dt): return ("Unknown", "Unknown")
+            m, y = dt.month, dt.year
+            if m >= 4:
+                return (str(y)[2:] + "-" + str(y+1)[2:], "Q" + str(((m-4)//3)+1))
+            return (str(y-1)[2:] + "-" + str(y)[2:], "Q4")
+        _dates = pd.to_datetime(df.get("Audit Start Date"), errors="coerce", dayfirst=True)
+        _fqs = _dates.apply(_fy_q)
+        df = df.copy()
+        df["FY"]      = _fqs.apply(lambda x: x[0])
+        df["Quarter"] = _fqs.apply(lambda x: x[1])
 
-    def _group_compliance(frame: pd.DataFrame, group_cols: list[str]) -> pd.DataFrame:
-        work = frame.copy()
-        work["_total_num"] = _to_num(work["TotalRecomms"])
-        work["_closed_num"] = _to_num(work["ClosedRecomms"])
-        work["_open_num"] = _to_num(work["OpenRecomms"])
-        grouped = (
-            work.groupby(group_cols, dropna=False, as_index=False)
-            .agg(
-                Total_Recomms=("_total_num", "sum"),
-                Closed_Recomms=("_closed_num", "sum"),
-                Open_Recomms=("_open_num", "sum"),
-            )
-        )
-        grouped["Compliance Value"] = (
-            grouped["Closed_Recomms"] / grouped["Total_Recomms"].replace(0, pd.NA)
-        ).fillna(0) * 100
-        return grouped
+    # ── Filters ───────────────────────────────────────────────────────────────
+    st.markdown("<div class='sec-title'>&#128269; Filters</div>", unsafe_allow_html=True)
+    f1, f2, f3, f4 = st.columns(4)
 
-    required_cols = [
-        "Zone", "Planning Plant", "Plant Desc.", "Audit Number",
-        "Audit Start Date", "Audit End Date", "TotalRecomms", "ClosedRecomms", "OpenRecomms",
+    _zones = sorted(df["Zone"].fillna("").astype(str).str.strip().replace("", pd.NA).dropna().unique().tolist())
+    sel_zone = f1.selectbox("Zone", ["All"] + _zones, key="lv_f_zone")
+
+    _dz = df if sel_zone == "All" else df[df["Zone"].astype(str).str.strip() == sel_zone]
+    _plants = sorted(_dz["Plant Desc."].fillna("").astype(str).str.strip().replace("", pd.NA).dropna().unique().tolist())
+    sel_plant = f2.selectbox("Location", ["All"] + _plants, key="lv_f_plant")
+
+    _fy_opts = sorted(df["FY"].fillna("Unknown").astype(str).unique().tolist(), reverse=True)
+    sel_fy = f3.selectbox("Financial Year", ["All"] + _fy_opts, key="lv_f_fy")
+
+    sel_qtr = f4.selectbox("Quarter", ["All", "Q1", "Q2", "Q3", "Q4"], key="lv_f_qtr")
+
+    # Apply filters
+    dv = df.copy()
+    if sel_zone  != "All": dv = dv[dv["Zone"].astype(str).str.strip() == sel_zone]
+    if sel_plant != "All": dv = dv[dv["Plant Desc."].astype(str).str.strip() == sel_plant]
+    if sel_fy    != "All": dv = dv[dv["FY"].astype(str) == sel_fy]
+    if sel_qtr   != "All": dv = dv[dv["Quarter"].astype(str) == sel_qtr]
+
+    if dv.empty:
+        st.info("No data matches the selected filters.")
+        return
+
+    def _n(s): return pd.to_numeric(s, errors="coerce").fillna(0)
+
+    total_r  = int(_n(dv["TotalRecomms"]).sum())
+    closed_r = int(_n(dv["ClosedRecomms"]).sum())
+    open_r   = int(_n(dv["OpenRecomms"]).sum())
+    audits   = len(dv)
+    comp_pct = (closed_r / total_r * 100) if total_r > 0 else 0.0
+    comp_icon = "✅" if comp_pct >= 75 else ("⚠️" if comp_pct >= 50 else "❌")
+
+    # ── 5-card KPI summary ────────────────────────────────────────────────────
+    st.markdown("<div class='sec-title'>&#128202; Overall Summary</div>", unsafe_allow_html=True)
+    k1, k2, k3, k4, k5 = st.columns(5)
+    k1.metric("Audited Locations", f"{audits:,}")
+    k2.metric("Total Recommendations", f"{total_r:,}")
+    k3.metric("\U0001f534 Open", f"{open_r:,}")
+    k4.metric("\U0001f7e2 Closed / Complied", f"{closed_r:,}")
+    k5.metric(f"Overall Compliance {comp_icon}", f"{comp_pct:.1f}%")
+
+    st.markdown("---")
+
+    # ── Zone-wise Summary ─────────────────────────────────────────────────────
+    st.markdown("<div class='sec-title'>&#128506; Zone-wise Summary</div>", unsafe_allow_html=True)
+    _zg = dv.assign(_t=_n(dv["TotalRecomms"]), _c=_n(dv["ClosedRecomms"]), _o=_n(dv["OpenRecomms"]))
+    zone_tbl = (
+        _zg.groupby("Zone", as_index=False)
+        .agg(Locations=("Planning Plant","count"), Total=("_t","sum"), Open=("_o","sum"), Closed=("_c","sum"))
+        .sort_values("Closed", ascending=False)
+        .reset_index(drop=True)
+    )
+    zone_tbl["Compliance %"] = zone_tbl.apply(
+        lambda r: f"{r.Closed/r.Total*100:.1f}%" if r.Total > 0 else "N/A", axis=1
+    )
+    _render_html_table(zone_tbl, max_height=350)
+
+    # ── Quarter-wise Summary ──────────────────────────────────────────────────
+    st.markdown("<div class='sec-title'>&#128197; Quarter-wise Summary</div>", unsafe_allow_html=True)
+    _qg = dv.assign(_t=_n(dv["TotalRecomms"]), _c=_n(dv["ClosedRecomms"]), _o=_n(dv["OpenRecomms"]))
+    qtr_tbl = (
+        _qg.groupby(["FY", "Quarter"], as_index=False)
+        .agg(Locations=("Planning Plant","count"), Total=("_t","sum"), Open=("_o","sum"), Closed=("_c","sum"))
+        .sort_values(["FY","Quarter"])
+        .reset_index(drop=True)
+    )
+    qtr_tbl["Compliance %"] = qtr_tbl.apply(
+        lambda r: f"{r.Closed/r.Total*100:.1f}%" if r.Total > 0 else "N/A", axis=1
+    )
+    _render_html_table(qtr_tbl, max_height=300)
+
+    # ── Audit Detail Table with observation drill-through ─────────────────────
+    st.markdown("<div class='sec-title'>&#128203; Audit Detail by Location</div>", unsafe_allow_html=True)
+    st.caption("Select an audit below and click ‘View Observations’ to see full observations, recommendations, and action-taken details.")
+
+    _req = ["Planning Plant", "Plant Desc.", "Zone", "FY", "Quarter",
+            "Audit Number", "Audit Start Date", "Audit End Date",
+            "TotalRecomms", "OpenRecomms", "ClosedRecomms"]
+    audit_tbl = dv[[c for c in _req if c in dv.columns]].copy()
+    audit_tbl["Compliance %"] = audit_tbl.apply(
+        lambda r: f"{_n(pd.Series([r['ClosedRecomms']])).sum() / max(_n(pd.Series([r['TotalRecomms']])).sum(), 1) * 100:.1f}%",
+        axis=1,
+    )
+    audit_tbl = audit_tbl.sort_values(["Zone", "Plant Desc.", "FY", "Quarter"]).reset_index(drop=True)
+    _render_html_table(audit_tbl, max_height=420)
+
+    # Observation drill-through selector
+    _audit_keys = [
+        f"{row['Audit Number']} | {row['Plant Desc.']} ({row['Planning Plant']}) | {row['FY']} {row['Quarter']}"
+        for _, row in audit_tbl.iterrows()
     ]
-    missing_cols = [c for c in required_cols if c not in df.columns]
-    if missing_cols:
-        st.warning("Missing required column(s): " + ", ".join(missing_cols))
-        return
+    obs_c1, obs_c2 = st.columns([4, 1])
+    sel_audit_key = obs_c1.selectbox(
+        "Select an audit to view observations:",
+        _audit_keys if _audit_keys else ["(no audits)"],
+        key="lv_sel_audit",
+    )
+    if obs_c2.button("&#128203; View Observations", key="btn_view_obs", use_container_width=True):
+        if _audit_keys:
+            _idx = _audit_keys.index(sel_audit_key)
+            _row = audit_tbl.iloc[_idx]
+            st.session_state["lv_obs_audit_no"]  = _row["Audit Number"]
+            st.session_state["lv_obs_plant"]     = _row["Planning Plant"]
+            st.session_state["lv_obs_plant_desc"] = _row["Plant Desc."]
+            st.session_state["lv_obs_zone"]      = _row["Zone"]
+            st.session_state["lv_obs_fy"]        = _row["FY"]
+            st.session_state["lv_obs_quarter"]   = _row["Quarter"]
+            st.session_state["lv_sub_page"]      = "obs_detail"
+            st.rerun()
 
-    df_source = df.copy()
-    df_view = df.copy()
+    st.markdown("---")
 
-    st.markdown("<div class='sec-title'>&#128269; Drill-Down Filters</div>", unsafe_allow_html=True)
-    f1, f2 = st.columns(2)
+    # ── Performance Analysis ──────────────────────────────────────────────────
+    st.markdown(
+        "<div class='sec-title'>&#128202; Performance Analysis &mdash; Zone &amp; Location Comparison</div>",
+        unsafe_allow_html=True,
+    )
+    st.caption("Quickly identify top-performing and under-performing zones and locations. The 75% dashed line marks the target threshold.")
 
-    zone_opts = ["All"] + sorted(df_view["Zone"].fillna("").astype(str).str.strip().replace("", pd.NA).dropna().unique().tolist())
-    plant_desc_opts = ["All"] + sorted(df_view["Plant Desc."].fillna("").astype(str).str.strip().replace("", pd.NA).dropna().unique().tolist())
+    _zone_c = zone_tbl.copy()
+    _zone_c["_pct"] = _zone_c.apply(lambda r: r.Closed/r.Total*100 if r.Total > 0 else 0.0, axis=1)
+    fig_zone = px.bar(
+        _zone_c, x="Zone", y="_pct",
+        color="_pct", color_continuous_scale=["#c62828","#f57c00","#2e7d32"],
+        range_color=[0, 100],
+        text=_zone_c["_pct"].apply(lambda x: f"{x:.1f}%"),
+        title="Compliance % by Zone",
+        labels={"_pct": "Compliance %"},
+    )
+    fig_zone.add_hline(y=75, line_dash="dash", line_color="#2e7d32",
+                       annotation_text="75% Target", annotation_position="top right")
+    fig_zone.update_traces(textposition="outside")
+    fig_zone.update_layout(height=380, coloraxis_showscale=False,
+                           margin=dict(l=20,r=20,t=50,b=20),
+                           yaxis=dict(title="Compliance %", range=[0,115]))
 
-    sel_zone = f1.selectbox("Zone", zone_opts, key="lv_filter_zone")
-    sel_plant_desc = f2.selectbox("Plant Desc.", plant_desc_opts, key="lv_filter_plant_desc")
+    _lg = dv.assign(_t=_n(dv["TotalRecomms"]), _c=_n(dv["ClosedRecomms"]), _o=_n(dv["OpenRecomms"]))
+    loc_chart = (
+        _lg.groupby(["Planning Plant","Plant Desc.","Zone"], as_index=False)
+        .agg(Total=("_t","sum"), Closed=("_c","sum"), Open=("_o","sum"))
+    )
+    loc_chart["Compliance %"] = loc_chart.apply(
+        lambda r: r.Closed/r.Total*100 if r.Total > 0 else 0.0, axis=1
+    )
+    loc_chart["Label"] = loc_chart["Plant Desc."].astype(str).str[:22]
+    loc_chart = loc_chart.sort_values("Compliance %")
+    fig_loc = px.bar(
+        loc_chart, x="Compliance %", y="Label",
+        orientation="h",
+        color="Compliance %", color_continuous_scale=["#c62828","#f57c00","#2e7d32"],
+        range_color=[0, 100],
+        text=loc_chart["Compliance %"].apply(lambda x: f"{x:.1f}%"),
+        title="Location-wise Compliance %",
+        labels={"Compliance %": "Compliance %", "Label": ""},
+    )
+    fig_loc.add_vline(x=75, line_dash="dash", line_color="#2e7d32", annotation_text="75%")
+    fig_loc.update_traces(textposition="outside")
+    fig_loc.update_layout(height=max(380, len(loc_chart)*26), coloraxis_showscale=False,
+                          margin=dict(l=20,r=20,t=50,b=20),
+                          xaxis=dict(range=[0,120]))
 
-    if sel_zone != "All":
-        df_view = df_view[df_view["Zone"].astype(str) == sel_zone]
-    if sel_plant_desc != "All":
-        df_view = df_view[df_view["Plant Desc."].astype(str) == sel_plant_desc]
+    ch1, ch2 = st.columns([1, 2])
+    with ch1:
+        st.plotly_chart(fig_zone, use_container_width=True)
+    with ch2:
+        st.plotly_chart(fig_loc, use_container_width=True)
 
-    if df_view.empty:
-        st.info("No data available after applying drill-down filters.")
-        return
-
-    total_recomms = _to_num(df_view["TotalRecomms"]).sum()
-    total_closed = _to_num(df_view["ClosedRecomms"]).sum()
-    compliance = (total_closed / total_recomms) if total_recomms > 0 else 0.0
-
-    m1, m2 = st.columns(2)
-    m1.metric("Location Visit Count", f"{df_view['Planning Plant'].nunique():,}")
-    m2.metric("Compliance (%)", f"{compliance * 100:.1f}%")
-
-    st.markdown("<div class='sec-title'>&#128203; Location Visit Details (Pivot)</div>", unsafe_allow_html=True)
-
-    pivot_work = df_view.copy()
-    pivot_work["_total_num"] = _to_num(pivot_work["TotalRecomms"])
-    pivot_work["_closed_num"] = _to_num(pivot_work["ClosedRecomms"])
-    pivot_work["_open_num"] = _to_num(pivot_work["OpenRecomms"])
-    pivot_df = (
-        pivot_work.groupby(
-            ["Planning Plant", "Audit Number", "Audit Start Date", "Audit End Date"],
-            as_index=False,
-            dropna=False,
+    # Top 5 / Bottom 5 performers
+    st.markdown("<div class='sec-title'>&#127942; Top &amp; Bottom Performers</div>", unsafe_allow_html=True)
+    _perf = loc_chart.sort_values("Compliance %", ascending=False).copy()
+    _perf["Compliance %"] = _perf["Compliance %"].apply(lambda x: f"{x:.1f}%")
+    _perf_disp = _perf[["Plant Desc.","Zone","Total","Open","Closed","Compliance %"]].rename(
+        columns={"Plant Desc.": "Location"}
+    )
+    top5_col, bot5_col = st.columns(2)
+    with top5_col:
+        st.markdown("**\U0001f7e2 Top 5 Performers**")
+        _render_html_table(_perf_disp.head(5).reset_index(drop=True), max_height=250)
+    with bot5_col:
+        st.markdown("**\U0001f534 Bottom 5 Performers**")
+        _render_html_table(
+            _perf_disp.tail(5).sort_values("Compliance %").reset_index(drop=True),
+            max_height=250,
         )
-        .agg({
-            "_total_num": "sum",
-            "_closed_num": "sum",
-            "_open_num": "sum",
-        })
-        .reset_index(drop=True)
-    )
 
-    pivot_df["Compliance (%)"] = (
-        pivot_df["_closed_num"] / pivot_df["_total_num"].replace(0, pd.NA)
-    ).fillna(0) * 100
+    st.markdown("---")
 
-    pivot_df = pivot_df.rename(columns={
-        "_total_num": "Total Recomms",
-        "_closed_num": "Closed Recomms",
-        "_open_num": "Open Recomms",
-    })
-
-    pivot_display = pivot_df.copy()
-    pivot_display["Compliance (%)"] = pivot_display["Compliance (%)"].map(lambda x: f"{x:.2f}%")
-    _render_html_table(pivot_display, max_height=500)
-
-    _download_excel_button(
-        label="&#11015;  Download Location Visit Raw Data  (.xlsx)",
-        file_prefix="location_visit",
-        sheets={"Location_Visit_Raw": df_view.reset_index(drop=True)},
-        key="dl_location_visit",
-    )
-
-    location_compliance = _group_compliance(df_view, ["Planning Plant", "Plant Desc."])
-    location_compliance["Location Label"] = (
-        location_compliance["Planning Plant"].astype(str).str.strip()
-        + " - "
-        + location_compliance["Plant Desc."].astype(str).str.strip()
-    )
-    zone_compliance = _group_compliance(df_view, ["Zone"])
-
-    top5_locations = location_compliance.sort_values(
-        ["Compliance Value", "Closed_Recomms", "Total_Recomms"],
-        ascending=[False, False, False],
-    ).head(5).reset_index(drop=True)
-    bottom5_locations = location_compliance.sort_values(
-        ["Compliance Value", "Total_Recomms", "Planning Plant"],
-        ascending=[True, False, True],
-    ).head(5).reset_index(drop=True)
-    top5_zones = zone_compliance.sort_values(
-        ["Compliance Value", "Closed_Recomms", "Total_Recomms"],
-        ascending=[False, False, False],
-    ).head(5).reset_index(drop=True)
-    bottom5_zones = zone_compliance.sort_values(
-        ["Compliance Value", "Total_Recomms", "Zone"],
-        ascending=[True, False, True],
-    ).head(5).reset_index(drop=True)
-
-    st.markdown("<div class='sec-title'>&#128202; Top / Bottom 5 Compliance Analysis</div>", unsafe_allow_html=True)
-
-    def _format_compliance_table(frame: pd.DataFrame, label_cols: list[str]) -> pd.DataFrame:
-        display = frame[label_cols + ["Compliance Value", "Total_Recomms", "Closed_Recomms"]].copy()
-        display = display.rename(columns={
-            "Compliance Value": "Compliance (%)",
-            "Total_Recomms": "Total Recomms",
-            "Closed_Recomms": "Closed Recomms",
-        })
-        display["Compliance (%)"] = display["Compliance (%)"].map(lambda x: f"{x:.2f}%")
-        display["Total Recomms"] = display["Total Recomms"].map(lambda x: f"{x:,}")
-        display["Closed Recomms"] = display["Closed Recomms"].map(lambda x: f"{x:,}")
-        return display
-
-    def _render_compliance_charts(frame: pd.DataFrame, label_col: str, title_prefix: str, colors: list[str]) -> None:
-        if frame.empty:
-            st.info("No analysis available.")
-            return
-        chart_col1, chart_col2 = st.columns(2)
-        with chart_col1:
-            pie_fig = px.pie(
-                frame,
-                names=label_col,
-                values="Compliance Value",
-                hole=0.62,
-                color_discrete_sequence=colors,
-                title=f"{title_prefix} Compliance Share",
-            )
-            pie_fig.update_traces(textposition="inside", textinfo="percent+label")
-            pie_fig.update_layout(margin=dict(l=20, r=20, t=60, b=20), height=420)
-            st.plotly_chart(pie_fig, use_container_width=True)
-        with chart_col2:
-            bar_fig = px.bar(
-                frame,
-                x="Compliance Value",
-                y=label_col,
-                orientation="h",
-                color="Compliance Value",
-                color_continuous_scale=colors,
-                title=f"{title_prefix} Compliance (%)",
-            )
-            bar_fig.update_layout(margin=dict(l=20, r=20, t=60, b=20), height=420, coloraxis_showscale=False)
-            bar_fig.update_xaxes(title_text="Compliance (%)", ticksuffix="%")
-            bar_fig.update_yaxes(title_text="")
-            st.plotly_chart(bar_fig, use_container_width=True)
-
-    st.markdown("<div class='sec-title'>&#11014; Top 5 Locations by Compliance</div>", unsafe_allow_html=True)
-    _render_html_table(_format_compliance_table(top5_locations, ["Planning Plant", "Plant Desc."]), max_height=260)
-    _render_compliance_charts(top5_locations, "Location Label", "Top 5 Locations", px.colors.sequential.Blues)
-
-    st.markdown("<div class='sec-title'>&#11015; Bottom 5 Locations by Compliance</div>", unsafe_allow_html=True)
-    _render_html_table(_format_compliance_table(bottom5_locations, ["Planning Plant", "Plant Desc."]), max_height=260)
-    _render_compliance_charts(bottom5_locations, "Location Label", "Bottom 5 Locations", px.colors.sequential.Reds)
-
-    st.markdown("<div class='sec-title'>&#11014; Top 5 Zones by Compliance</div>", unsafe_allow_html=True)
-    _render_html_table(_format_compliance_table(top5_zones, ["Zone"]), max_height=260)
-    _render_compliance_charts(top5_zones, "Zone", "Top 5 Zones", px.colors.sequential.Greens)
-
-    st.markdown("<div class='sec-title'>&#11015; Bottom 5 Zones by Compliance</div>", unsafe_allow_html=True)
-    _render_html_table(_format_compliance_table(bottom5_zones, ["Zone"]), max_height=260)
-    _render_compliance_charts(bottom5_zones, "Zone", "Bottom 5 Zones", px.colors.sequential.OrRd)
-
-    plant_master_scope = load_plant_master()[["Plant Code", "Plant Name", "Zone Name"]].copy()
-    plant_master_scope["Plant Code"] = (
-        plant_master_scope["Plant Code"].astype(str).str.strip().str.replace(r"\.0$", "", regex=True)
-    )
-
-    missing_scope = df_source.copy()
+    # ── Missing Locations ─────────────────────────────────────────────────────
+    st.markdown("<div class='sec-title'>&#9888; Locations Not Yet Audited (in scope)</div>", unsafe_allow_html=True)
+    _pm = load_plant_master()[["Plant Code","Plant Name","Zone Name"]].copy()
+    _pm["Plant Code"] = _pm["Plant Code"].astype(str).str.strip().str.replace(r"\.0$","",regex=True)
+    _src_codes = set(df["Planning Plant"].astype(str).str.strip().str.replace(r"\.0$","",regex=True).unique())
     if sel_zone != "All":
-        missing_scope = missing_scope[missing_scope["Zone"].astype(str) == sel_zone]
-        plant_master_scope = plant_master_scope[plant_master_scope["Zone Name"].astype(str) == sel_zone]
-
-    source_codes = set(
-        missing_scope["Planning Plant"].astype(str).str.strip().str.replace(r"\.0$", "", regex=True).unique().tolist()
-    )
-    missing_locations = (
-        plant_master_scope[~plant_master_scope["Plant Code"].isin(source_codes)]
-        .rename(columns={
-            "Zone Name": "Zone",
-            "Plant Code": "Planning Plant",
-            "Plant Name": "Location",
-        })
-        [["Zone", "Planning Plant", "Location"]]
-        .sort_values(["Zone", "Planning Plant"])
+        _pm = _pm[_pm["Zone Name"].astype(str) == sel_zone]
+    _missing = (
+        _pm[~_pm["Plant Code"].isin(_src_codes)]
+        .rename(columns={"Zone Name":"Zone","Plant Code":"Planning Plant","Plant Name":"Location"})
+        [["Zone","Planning Plant","Location"]]
+        .sort_values(["Zone","Planning Plant"])
         .reset_index(drop=True)
     )
-
-    st.markdown("<div class='sec-title'>&#9888; Missing Zones/Locations</div>", unsafe_allow_html=True)
-    if missing_locations.empty:
-        st.success("All PlantMaster zones/locations in the current scope are present in the Location Visit source file.")
+    if _missing.empty:
+        st.success("All locations in scope have at least one audit on record.")
     else:
-        _render_html_table(missing_locations, max_height=320)
+        _render_html_table(_missing, max_height=320)
+
+    st.markdown("---")
+
+    # ── Download ──────────────────────────────────────────────────────────────
+    _download_excel_button(
+        label="⬇  Download Drill-Down Data  (.xlsx)",
+        file_prefix="location_visit_drilldown",
+        sheets={
+            "Audit Detail":     audit_tbl.reset_index(drop=True),
+            "Zone Summary":     zone_tbl.reset_index(drop=True),
+            "Quarter Summary":  qtr_tbl.reset_index(drop=True),
+        },
+        key="dl_loc_visit_drill",
+    )
 
 import base64
 import pandas as pd
@@ -3410,7 +3556,7 @@ def render_dashboard(
                 return (str(y - 1)[2:] + "-" + str(y)[2:], "Q4")
 
             df_loc_work["_date_dedup"] = pd.to_datetime(
-                df_loc_work["Audit Start Date"], format="%d/%m/%Y", errors="coerce"
+                df_loc_work["Audit Start Date"], errors="coerce", dayfirst=True
             )
             _fq = df_loc_work["_date_dedup"].apply(_get_fy_quarter)
             df_loc_work["_FY"]      = _fq.apply(lambda x: x[0])
@@ -3419,15 +3565,40 @@ def render_dashboard(
                 df_loc_work
                 .sort_values(["_date_dedup", "Audit Number"], ascending=[False, False])
                 .drop_duplicates(subset=["Planning Plant", "_FY", "_Quarter"], keep="first")
-                .drop(columns=["_date_dedup", "_FY", "_Quarter"])
+                .rename(columns={"_FY": "FY", "_Quarter": "Quarter"})
+                .drop(columns=["_date_dedup"])
                 .reset_index(drop=True)
             )
 
             df_loc_filtered = df_loc_work.copy()
 
-            _loc_total = pd.to_numeric(df_loc_filtered["TotalRecomms"], errors="coerce").fillna(0).sum()
-            _loc_closed = pd.to_numeric(df_loc_filtered["ClosedRecomms"], errors="coerce").fillna(0).sum()
-            kpi_location_visit = int(df_loc_filtered["Planning Plant"].nunique())
+            # Tile: default to previous quarter data
+            _tnow = datetime.now()
+            _tm, _ty = _tnow.month, _tnow.year
+            if _tm >= 4:
+                _curr_fy_t = str(_ty)[2:] + "-" + str(_ty+1)[2:]
+                _curr_q_t  = ((_tm - 4) // 3) + 1
+            else:
+                _curr_fy_t = str(_ty-1)[2:] + "-" + str(_ty)[2:]
+                _curr_q_t  = 4
+            if _curr_q_t == 1:
+                _prev_fy_t = str(int("20" + _curr_fy_t[:2]) - 1)[2:] + "-" + _curr_fy_t[:2]
+                _prev_q_t  = "Q4"
+            else:
+                _prev_fy_t = _curr_fy_t
+                _prev_q_t  = f"Q{_curr_q_t - 1}"
+            _prev_qtr_label = f"{_prev_q_t} FY{_prev_fy_t}"
+
+            _df_tile = df_loc_filtered[
+                (df_loc_filtered["FY"] == _prev_fy_t) &
+                (df_loc_filtered["Quarter"] == _prev_q_t)
+            ]
+            if _df_tile.empty:
+                _df_tile = df_loc_filtered  # fallback: all data if no prev-qtr records
+
+            _loc_total  = pd.to_numeric(_df_tile["TotalRecomms"],  errors="coerce").fillna(0).sum()
+            _loc_closed = pd.to_numeric(_df_tile["ClosedRecomms"], errors="coerce").fillna(0).sum()
+            kpi_location_visit      = len(_df_tile)   # audit record count (matches Sr. Mgr Dashboard)
             kpi_location_compliance = (_loc_closed / _loc_total) if _loc_total > 0 else 0.0
     else:
         loc_visit_error = "Location Visit file not found at Reports/LOCATION_VISIT.xls"
@@ -3824,10 +3995,11 @@ def render_dashboard(
             st.rerun()
     with col12:
         # Step 6: KPI tile UI for Location Visit (use kpi_card for alignment)
+        _lv_label = _prev_qtr_label if "kpi_location_visit" in dir() and kpi_location_visit >= 0 else "Prev Qtr"
         clicked_location_visit = kpi_card(
-            label="Location Visit - %Compliance",
-            value=f"{kpi_location_visit:,} | {kpi_location_compliance * 100:.1f}%",
-            detail="Location Visits and Compliance",
+            label="Location Visit | Compliance",
+            value=f"{kpi_location_visit:,} Audits | {kpi_location_compliance * 100:.1f}%",
+            detail=f"{_lv_label}  •  Closed: {int(_loc_closed):,}  •  Open: {int(_loc_total - _loc_closed):,}",
             icon="&#128205;",
             color_class="c-success" if kpi_location_visit > 0 else "c-muted",
             key="location_visit_btn"
@@ -3837,6 +4009,7 @@ def render_dashboard(
             st.session_state["dummy_tank_clicked"] = False
             st.session_state["tank_turns_page"] = "main"
             st.session_state["selected_tile"] = None
+            st.session_state["lv_sub_page"] = "summary"
             st.session_state["location_visit_page"] = "drilldown"
             st.rerun()
     st.markdown("<div style='height:10px'></div>", unsafe_allow_html=True)
@@ -7101,6 +7274,8 @@ def main() -> None:
         st.session_state["page"] = "dashboard"
     if "location_visit_page" not in st.session_state:
         st.session_state["location_visit_page"] = "main"
+    if "lv_sub_page" not in st.session_state:
+        st.session_state["lv_sub_page"] = "summary"
     if "tank_turns_page" not in st.session_state:
         st.session_state["tank_turns_page"] = "main"
     if "open_mail_center" not in st.session_state:
