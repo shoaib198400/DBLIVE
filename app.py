@@ -1729,14 +1729,15 @@ def load_location_visit(path: str, cache_buster: tuple[int, int] | None = None) 
                 _records = []
                 for _vals, _grp in df.groupby(_agg_keys, dropna=False):
                     _statuses = _grp[_capa_col].astype(str).str.strip()
-                    # exclude blank and NaN CAPA Status rows (NaN becomes "nan" after astype str)
-                    _valid    = _statuses[(_statuses != "") & (_statuses.str.lower() != "nan")]
-                    if len(_valid) == 0:
-                        continue
+                    # Non-blank statuses (include all; "nan" from NaN is excluded as it means no data)
+                    _non_blank = _statuses[_statuses != ""]
+                    _valid     = _non_blank[_non_blank.str.lower() != "nan"]
                     _row = dict(zip(_agg_keys, _vals if isinstance(_vals, tuple) else [_vals]))
                     for _ec in _extra:
                         _nonnull = _grp[_ec].dropna()
                         _row[_ec] = _nonnull.iloc[0] if not _nonnull.empty else ""
+                    # Include audit even if all CAPA rows are blank (TotalRecomms=0)
+                    # Matches Sr. Manager logic which counts all Plant+Audit combos
                     _row["TotalRecomms"]  = len(_valid)
                     _row["ClosedRecomms"] = int(_valid.isin(_CLOSED).sum())
                     _row["OpenRecomms"]   = int(_valid.isin(_OPEN).sum())
@@ -3695,18 +3696,27 @@ def render_dashboard(
                     return (str(y)[2:] + "-" + str(y + 1)[2:], "Q" + str(((m - 4) // 3) + 1))
                 return (str(y - 1)[2:] + "-" + str(y)[2:], "Q4")
 
-            df_loc_work["_date_dedup"] = pd.to_datetime(
+            _dates = pd.to_datetime(
                 df_loc_work["Audit Start Date"], errors="coerce", dayfirst=True
             )
-            _fq = df_loc_work["_date_dedup"].apply(_get_fy_quarter)
+            _fq = _dates.apply(_get_fy_quarter)
             df_loc_work["_FY"]      = _fq.apply(lambda x: x[0])
             df_loc_work["_Quarter"] = _fq.apply(lambda x: x[1])
+            df_loc_work["_TotalRecommsNum"] = pd.to_numeric(
+                df_loc_work["TotalRecomms"], errors="coerce"
+            ).fillna(0)
+            # Dedup: per Plant+FY+Quarter keep the audit with MAX recommendations
+            # (as per business rule — if multiple audits in same quarter, pick the most comprehensive one)
+            # Tie-break by Audit Number descending (higher = more recent)
             df_loc_work = (
                 df_loc_work
-                .sort_values(["_date_dedup", "Audit Number"], ascending=[False, False])
+                .sort_values(
+                    ["_TotalRecommsNum", "Audit Number"],
+                    ascending=[False, False],
+                )
                 .drop_duplicates(subset=["Planning Plant", "_FY", "_Quarter"], keep="first")
                 .rename(columns={"_FY": "FY", "_Quarter": "Quarter"})
-                .drop(columns=["_date_dedup"])
+                .drop(columns=["_TotalRecommsNum"])
                 .reset_index(drop=True)
             )
 
