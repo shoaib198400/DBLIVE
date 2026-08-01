@@ -3660,22 +3660,19 @@ def render_dashboard(
                 .copy()
                 .assign(**{"Plant Code": lambda d: d["Plant Code"].astype(str).str.strip().str.replace(r"\.0$", "", regex=True)})
             )
-            # Save file's Zone (SBU Zone) before merge — matches Sr. Manager logic
-            _file_zone = df_loc_work["Zone"].copy() if "Zone" in df_loc_work.columns else None
             df_loc_work = df_loc_work.merge(
                 plant_map,
                 left_on="Planning Plant",
                 right_on="Plant Code",
                 how="left",
             )
-            # Restore file Zone (don't override with PlantMaster Zone Name)
-            if _file_zone is not None:
-                df_loc_work["Zone"] = _file_zone.values
-            elif "Zone Name" in df_loc_work.columns:
-                df_loc_work["Zone"] = df_loc_work["Zone Name"]
-            else:
-                df_loc_work["Zone"] = "Unmapped"
-            df_loc_work["Zone"] = df_loc_work["Zone"].fillna("Unmapped").astype(str).str.strip()
+            # Zone always comes from PlantMaster (Zone Name column)
+            df_loc_work["Zone"] = (
+                df_loc_work["Zone Name"]
+                .fillna("Unmapped")
+                .astype(str)
+                .str.strip()
+            )
             df_loc_work["Zone Name"] = df_loc_work["Zone"]
             df_loc_work["Plant Name"] = (
                 df_loc_work["Plant Name"]
