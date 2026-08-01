@@ -3837,6 +3837,12 @@ def render_dashboard(
                 df_loc_work["Planning Plant"].astype(str).str.strip().str.replace(r"\.0$", "", regex=True)
             )
 
+            # Plant code aliases: SAP audit data uses different codes than PlantMaster
+            # 3708 = VISAKH NBOT → PlantMaster code 3718 (South Central Zone)
+            # 1833 = COCHIN BLACK TERMINAL → PlantMaster code 3833 (Cochin Zone)
+            _PLANT_ALIASES = {"3708": "3718", "1833": "3833"}
+            df_loc_work["Planning Plant"] = df_loc_work["Planning Plant"].replace(_PLANT_ALIASES)
+
             plant_map = (
                 df_plant[["Plant Code", "Plant Name", "Zone Name"]]
                 .copy()
