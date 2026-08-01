@@ -441,47 +441,79 @@ def render_location_visit_details(df: pd.DataFrame) -> None:
     audit_tbl = audit_tbl.sort_values("_comp_num", ascending=False).drop(columns=["_comp_num"]).reset_index(drop=True)
     audit_tbl.insert(0, "S.No", range(1, len(audit_tbl)+1))
 
-    # Custom HTML table with compact column widths — no horizontal scroll
-    _ath = "padding:7px 6px;font-weight:700;border-bottom:2px solid #d5e2f3;font-size:12px;text-align:center;white-space:normal;word-wrap:break-word;"
-    _ath_l = "padding:7px 8px;font-weight:700;border-bottom:2px solid #d5e2f3;font-size:12px;text-align:left;"
+    # Zone name → short code for compact badge in audit table
+    _ZONE_ABBR = {
+        "south central zone": "SCZ", "north west zone": "NWZ",
+        "north central zone": "NCZ", "cochin zone": "COZ",
+        "south west zone": "SWZ",   "south zone": "SZ",
+        "north zone": "NZ",          "west zone": "WZ",
+        "east zone": "EZ",           "guwahati zone": "GUZ",
+        "bhubneshwar zone": "BBZ",   "bengaluru zone": "BRZ",
+        "bhopal zone": "BLZ",        "jaipur zone": "JPZ",
+        "chandigarh zone": "CDZ",    "patna zone": "PNZ",
+        "noida (up-west) zone": "NDZ", "noida zone": "NDZ",
+        "unmapped": "—",
+    }
+    _ZONE_ABBR_CLR = {
+        "SCZ": "#00695C", "NWZ": "#283593", "NCZ": "#1565C0",
+        "COZ": "#BF360C", "SWZ": "#4A148C", "SZ":  "#558B2F",
+        "NZ":  "#003087", "WZ":  "#AD1457", "EZ":  "#6A1B9A",
+        "GUZ": "#00838F", "BBZ": "#4E342E", "BRZ": "#2E7D32",
+        "BLZ": "#E65100", "JPZ": "#F57F17", "CDZ": "#37474F",
+        "PNZ": "#880E4F", "NDZ": "#0277BD", "—":  "#546E7A",
+    }
+    def _zone_abbr_badge(zone_name):
+        key = str(zone_name).strip().lower()
+        code = _ZONE_ABBR.get(key, "".join(w[0] for w in key.split() if w != "zone").upper()[:4] or "?")
+        clr = _ZONE_ABBR_CLR.get(code, "#546E7A")
+        return (
+            f"<span style='background:{clr};color:#fff;font-weight:700;"
+            f"padding:3px 6px;border-radius:8px;font-size:11px;"
+            f"letter-spacing:.5px;white-space:nowrap;'>{html.escape(code)}</span>"
+        )
+
+    # Custom HTML table — fixed column widths, no horizontal scroll
+    _ath  = "padding:7px 6px;font-weight:700;border-bottom:2px solid #c3d5ea;font-size:12px;text-align:center;white-space:nowrap;color:#003087;"
+    _ath_l= "padding:7px 8px;font-weight:700;border-bottom:2px solid #c3d5ea;font-size:12px;text-align:left;white-space:nowrap;color:#003087;"
     _audit_hdr = (
-        f"<th style='width:35px;{_ath}color:#003087;'>S.No</th>"
-        f"<th style='width:55px;{_ath}color:#003087;'>Plant<br>Code</th>"
-        f"<th style='{_ath_l}color:#003087;'>Location</th>"
-        f"<th style='width:55px;{_ath}color:#003087;'>Zone</th>"
-        f"<th style='width:130px;{_ath_l}color:#003087;'>Audit Number</th>"
-        f"<th style='width:75px;{_ath}color:#003087;'>Start Date</th>"
-        f"<th style='width:75px;{_ath}color:#003087;'>End Date</th>"
-        f"<th style='width:48px;{_ath}color:#003087;'>Total<br>Rec.</th>"
-        f"<th style='width:45px;{_ath}color:#c62828;'>Open</th>"
-        f"<th style='width:52px;{_ath}color:#2e7d32;'>Closed</th>"
-        f"<th style='width:70px;{_ath}color:#003087;'>Compliance</th>"
+        f"<th style='width:38px;{_ath}'>S.No</th>"
+        f"<th style='width:58px;{_ath}'>Plant<br>Code</th>"
+        f"<th style='{_ath_l}'>Location</th>"
+        f"<th style='width:52px;{_ath}'>Zone</th>"
+        f"<th style='width:120px;{_ath_l}'>Audit Number</th>"
+        f"<th style='width:72px;{_ath}'>Start<br>Date</th>"
+        f"<th style='width:72px;{_ath}'>End<br>Date</th>"
+        f"<th style='width:44px;{_ath}'>Rec.</th>"
+        f"<th style='width:44px;{_ath}color:#c62828;'>Open</th>"
+        f"<th style='width:50px;{_ath}color:#2e7d32;'>Closed</th>"
+        f"<th style='width:68px;{_ath}'>Comp.%</th>"
     )
     _audit_rows = ""
     for i, r in audit_tbl.iterrows():
-        _bg = "#ffffff" if i % 2 == 0 else "#f7fafd"
-        _td = f"padding:6px 6px;font-size:12px;border-bottom:1px solid #e2eaf4;text-align:center;vertical-align:middle;"
-        _td_l = f"padding:6px 8px;font-size:12px;border-bottom:1px solid #e2eaf4;text-align:left;vertical-align:middle;"
+        _bg = "#ffffff" if i % 2 == 0 else "#f4f8ff"
+        _td  = "padding:6px 6px;font-size:12px;border-bottom:1px solid #e2eaf4;text-align:center;vertical-align:middle;"
+        _td_l= "padding:6px 8px;font-size:12px;border-bottom:1px solid #e2eaf4;text-align:left;vertical-align:middle;white-space:normal;word-wrap:break-word;"
+        _comp_val = float(str(r['Compliance %']).rstrip('%')) if str(r.get('Compliance %','N/A')) != 'N/A' else 0.0
         _audit_rows += (
             f"<tr style='background:{_bg};'>"
             f"<td style='{_td}font-weight:700;color:#003087;'>{int(r['S.No'])}</td>"
             f"<td style='{_td}font-weight:600;'>{html.escape(str(r['Planning Plant']))}</td>"
-            f"<td style='{_td_l}font-weight:600;max-width:180px;white-space:normal;word-wrap:break-word;'>{html.escape(str(r.get('Plant Desc.','')) if 'Plant Desc.' in r.index else '')}</td>"
-            f"<td style='{_td}'>{_zone_badge(r.get('Zone','')) if 'Zone' in r.index else ''}</td>"
-            f"<td style='{_td_l}font-size:11px;word-break:break-all;'>{html.escape(str(r.get('Audit Number','')) if 'Audit Number' in r.index else '')}</td>"
-            f"<td style='{_td}font-size:11px;'>{html.escape(str(r.get('Audit Start Date','')) if 'Audit Start Date' in r.index else '')}</td>"
-            f"<td style='{_td}font-size:11px;'>{html.escape(str(r.get('Audit End Date','')) if 'Audit End Date' in r.index else '')}</td>"
+            f"<td style='{_td_l}font-weight:600;'>{html.escape(str(r.get('Plant Desc.','') if 'Plant Desc.' in r.index else ''))}</td>"
+            f"<td style='{_td}'>{_zone_abbr_badge(r.get('Zone','') if 'Zone' in r.index else '')}</td>"
+            f"<td style='{_td}font-size:11px;word-break:break-all;text-align:left;padding:6px 8px;'>{html.escape(str(r.get('Audit Number','') if 'Audit Number' in r.index else ''))}</td>"
+            f"<td style='{_td}font-size:11px;'>{html.escape(str(r.get('Audit Start Date','') if 'Audit Start Date' in r.index else ''))}</td>"
+            f"<td style='{_td}font-size:11px;'>{html.escape(str(r.get('Audit End Date','') if 'Audit End Date' in r.index else ''))}</td>"
             f"<td style='{_td}font-weight:600;'>{int(_n(pd.Series([r.get('TotalRecomms',0)])).sum())}</td>"
             f"<td style='{_td}font-weight:700;color:#c62828;'>{int(_n(pd.Series([r.get('OpenRecomms',0)])).sum())}</td>"
             f"<td style='{_td}font-weight:700;color:#2e7d32;'>{int(_n(pd.Series([r.get('ClosedRecomms',0)])).sum())}</td>"
-            f"<td style='{_td}'>{_comp_badge(float(str(r['Compliance %']).rstrip('%')) if r['Compliance %'] != 'N/A' else 0.0)}</td>"
+            f"<td style='{_td}'>{_comp_badge(_comp_val)}</td>"
             f"</tr>"
         )
     _audit_html = (
         "<div style='overflow-x:hidden;overflow-y:auto;max-height:440px;margin:6px 0 10px 0;"
         "border-radius:8px;border:1px solid #d5e2f3;box-shadow:0 2px 8px #e0e0e0;'>"
         "<table style='border-collapse:collapse;width:100%;table-layout:fixed;font-size:12px;'>"
-        f"<thead><tr style='background:#eaf2fb;position:sticky;top:0;z-index:1;'>{_audit_hdr}</tr></thead>"
+        f"<thead><tr style='background:#dce8f7;position:sticky;top:0;z-index:1;'>{_audit_hdr}</tr></thead>"
         f"<tbody>{_audit_rows}</tbody>"
         "</table></div>"
     )
