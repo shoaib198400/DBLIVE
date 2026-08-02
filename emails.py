@@ -15,6 +15,7 @@ notice and disables the Send button automatically.
 
 from __future__ import annotations
 
+import base64
 import gc
 import io
 import os
@@ -25,6 +26,21 @@ from datetime import datetime
 from typing import Dict, List, Optional, Tuple
 
 import pandas as pd
+
+# ── Logo loader (embed HPCL logo as base64 data-URI for email) ─────────────────
+_BASE_DIR   = os.path.dirname(os.path.abspath(__file__))
+_LOGO_PATH  = os.path.join(_BASE_DIR, "MAster", "Master Logo.jpg")
+
+def _logo_data_uri() -> str:
+    """Return base64-encoded data URI for HPCL Master Logo, or empty string."""
+    try:
+        if os.path.exists(_LOGO_PATH):
+            with open(_LOGO_PATH, "rb") as f:
+                b64 = base64.b64encode(f.read()).decode()
+            return f"data:image/jpeg;base64,{b64}"
+    except Exception:
+        pass
+    return ""
 
 # ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -289,7 +305,8 @@ def build_exception_email_html(
 
     primary   = "#003087"
     secondary = "#0057A8"
-    accent    = "#FFD700"
+    accent    = "#003087"   # deep HPCL blue (used for company name text)
+    _logo_uri = _logo_data_uri()
     as_of     = as_of_date or datetime.now().strftime("%d %b %Y")
     kpis      = zone_kpi_dict or {}
 
@@ -484,22 +501,32 @@ def build_exception_email_html(
          style="background:#fff;border-radius:12px;overflow:hidden;
                 box-shadow:0 4px 20px rgba(0,48,135,0.12);">
 
-    <!-- Header strip -->
-    <tr><td style="background:linear-gradient(135deg,{primary} 0%,{secondary} 100%);
-                   padding:18px 28px;">
+    <!-- Logo strip (white background) -->
+    <tr><td style="background:#ffffff;padding:12px 24px;border-bottom:2px solid #e8eef8;">
       <table width="100%" cellpadding="0" cellspacing="0"><tr>
-        <td>
-          <div style="font-size:20px;font-weight:900;color:#fff;letter-spacing:0.04em;">
-            &#9981;&nbsp; HPCL — SOD Exception Alert
-          </div>
-          <div style="font-size:12px;color:{accent};margin-top:3px;font-weight:600;">
+        <td style="vertical-align:middle;">
+          {'<img src="' + _logo_uri + '" alt="HPCL" style="height:44px;width:auto;display:block;object-fit:contain;" />' if _logo_uri else '<div style="font-size:28px;font-weight:900;color:#003087;letter-spacing:.04em;">HPCL</div>'}
+        </td>
+        <td style="vertical-align:middle;padding-left:14px;">
+          <div style="font-size:13px;font-weight:700;color:{accent};letter-spacing:0.02em;line-height:1.3;">
             Hindustan Petroleum Corporation Limited
           </div>
+          <div style="font-size:10px;color:#555;margin-top:2px;">
+            Supply &amp; Operations Division
+          </div>
         </td>
-        <td align="right">
-          <span style="font-size:11px;color:rgba(255,255,255,0.80);">Data as of: {as_of}</span>
+        <td align="right" style="vertical-align:middle;">
+          <span style="font-size:11px;color:#666;">Data as of: <b style="color:{primary};">{as_of}</b></span>
         </td>
       </tr></table>
+    </td></tr>
+
+    <!-- Alert title strip (dark blue gradient) -->
+    <tr><td style="background:linear-gradient(135deg,{primary} 0%,{secondary} 100%);
+                   padding:14px 24px;">
+      <div style="font-size:18px;font-weight:900;color:#fff;letter-spacing:0.04em;">
+        &#128204;&nbsp; HPCL — SOD Exception Alert
+      </div>
     </td></tr>
 
     <!-- Zone pill -->
