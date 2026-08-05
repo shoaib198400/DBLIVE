@@ -1,4 +1,4 @@
-import base64
+﻿import base64
 import hashlib
 import inspect
 import pandas as pd
@@ -20,11 +20,10 @@ def render_location_visit_observation_detail() -> None:
     fy         = st.session_state.get("lv_obs_fy", "")
     quarter    = st.session_state.get("lv_obs_quarter", "")
 
-    back_col, _ = st.columns([1, 7])
-    with back_col:
-        if st.button("⬅ Back to Audit List", key="btn_back_obs_detail"):
-            st.session_state["lv_sub_page"] = "summary"
-            st.rerun()
+    _bcols = st.columns([1, 5])
+    if _bcols[0].button("⬅ Back to Audit List", key="btn_back_obs_detail", use_container_width=True):
+        st.session_state["lv_sub_page"] = "summary"
+        st.rerun()
 
     st.markdown(
         f"<div class='sec-title'>&#128203; Observation Detail &mdash; "
@@ -32,9 +31,11 @@ def render_location_visit_observation_detail() -> None:
         unsafe_allow_html=True,
     )
     st.markdown(
-        f"**Zone:** {html.escape(str(zone))} &nbsp;|&nbsp; "
-        f"**Period:** {quarter} FY{fy} &nbsp;|&nbsp; "
-        f"**Audit No.:** {html.escape(str(audit_no))}",
+        f"<div style='background:#f0f7ff;border-left:3px solid #003087;border-radius:5px;"
+        f"padding:6px 14px;margin:4px 0 10px 0;font-size:13px;'>"
+        f"<b>Zone:</b> {html.escape(str(zone))} &nbsp;&#124;&nbsp; "
+        f"<b>Period:</b> {quarter} FY{fy} &nbsp;&#124;&nbsp; "
+        f"<b>Audit No.:</b> {html.escape(str(audit_no))}</div>",
         unsafe_allow_html=True,
     )
 
@@ -73,48 +74,119 @@ def render_location_visit_observation_detail() -> None:
         st.warning(f"No detail rows found for Audit {audit_no} / Plant {plant}.")
         return
 
-    # Summary KPIs at top
+    # ── Colored KPI cards ────────────────────────────────────────────────────
+    _CLOSED = {"Closed", "Completed"}
+    _OPEN   = {"Open", "Reopened"}
     if _capa_col:
-        _CLOSED = {"Closed", "Completed"}
-        _OPEN   = {"Open", "Reopened"}
-        statuses  = df_audit[_capa_col].astype(str).str.strip()
-        valid     = statuses[statuses.isin(_CLOSED | _OPEN)]
-        total_c   = len(valid)
-        closed_c  = int(statuses.isin(_CLOSED).sum())
-        open_c    = int(statuses.isin(_OPEN).sum())
-        comp_pct  = (closed_c / total_c * 100) if total_c > 0 else 0.0
-        comp_icon = "✅" if comp_pct >= 75 else ("⚠️" if comp_pct >= 50 else "❌")
-        sc1, sc2, sc3, sc4 = st.columns(4)
-        sc1.metric("Total Recommendations", total_c)
-        sc2.metric("\U0001f7e2 Closed / Complied", closed_c)
-        sc3.metric("\U0001f534 Open", open_c)
-        sc4.metric(f"Compliance {comp_icon}", f"{comp_pct:.1f}%")
+        statuses = df_audit[_capa_col].astype(str).str.strip()
+        valid    = statuses[statuses.isin(_CLOSED | _OPEN)]
+        total_c  = len(valid)
+        closed_c = int(statuses.isin(_CLOSED).sum())
+        open_c   = int(statuses.isin(_OPEN).sum())
+    else:
+        total_c = closed_c = open_c = 0
+    comp_pct  = (closed_c / total_c * 100) if total_c > 0 else 0.0
+    comp_icon = "✅" if comp_pct >= 75 else ("⚠️" if comp_pct >= 50 else "❌")
+    _cc = "#2e7d32" if comp_pct >= 75 else ("#F57C00" if comp_pct >= 50 else "#c62828")
 
-    # Select display columns
+    _obs_kpi_html = f"""
+    <div style="display:flex;gap:10px;margin:6px 0 14px 0;flex-wrap:wrap;">
+      <div style="flex:1;min-width:120px;background:linear-gradient(135deg,#003087,#0057A8);border-radius:9px;padding:14px 10px;text-align:center;color:#fff;box-shadow:0 3px 10px rgba(0,48,135,0.25);">
+        <div style="font-size:28px;font-weight:800;">{total_c}</div>
+        <div style="font-size:12px;font-weight:600;margin-top:4px;opacity:.9;">&#128203; Total Recommendations</div>
+      </div>
+      <div style="flex:1;min-width:120px;background:linear-gradient(135deg,#c62828,#d32f2f);border-radius:9px;padding:14px 10px;text-align:center;color:#fff;box-shadow:0 3px 10px rgba(198,40,40,0.25);">
+        <div style="font-size:28px;font-weight:800;">{open_c}</div>
+        <div style="font-size:12px;font-weight:600;margin-top:4px;opacity:.9;">&#128308; Open / Pending</div>
+      </div>
+      <div style="flex:1;min-width:120px;background:linear-gradient(135deg,#2e7d32,#388e3c);border-radius:9px;padding:14px 10px;text-align:center;color:#fff;box-shadow:0 3px 10px rgba(46,125,50,0.25);">
+        <div style="font-size:28px;font-weight:800;">{closed_c}</div>
+        <div style="font-size:12px;font-weight:600;margin-top:4px;opacity:.9;">&#128994; Closed / Complied</div>
+      </div>
+      <div style="flex:1;min-width:120px;background:linear-gradient(135deg,{_cc},{_cc}cc);border-radius:9px;padding:14px 10px;text-align:center;color:#fff;box-shadow:0 3px 10px rgba(0,0,0,0.18);">
+        <div style="font-size:28px;font-weight:800;">{comp_pct:.1f}%</div>
+        <div style="font-size:12px;font-weight:600;margin-top:4px;opacity:.9;">{comp_icon} Compliance</div>
+      </div>
+    </div>"""
+    st.markdown(_obs_kpi_html, unsafe_allow_html=True)
+
+    # ── Select display columns (remove Risk Category, Severity, Revised Target Date, Root Cause) ──
     _obs_cols = [c for c in [
         "CAPA Number", "Observation Comment", "Recommendation",
-        "CAPA Status", "Risk Category", "Severity Code",
-        "Target Date", "Revised Target Date",
-        "Action Taken Current Status", "Root Cause Analysis",
+        "CAPA Status", "Target Date",
+        "Action Taken Current Status",
         "Action Closed by Name", "Action Closed Date",
     ] if c in df_audit.columns]
     if not _obs_cols:
-        _obs_cols = list(df_audit.columns)[:12]
+        _obs_cols = [c for c in df_audit.columns
+                     if c not in {"Risk Category","Severity Code","Revised Target Date","Root Cause Analysis"}][:10]
 
     df_obs = df_audit[_obs_cols].reset_index(drop=True)
 
-    # Emoji-coded CAPA Status (plain text, compatible with _render_html_table)
+    # Strip timestamps: keep only date portion (DD/MM/YYYY or first word before space)
+    for _dcol in ("Target Date", "Action Closed Date"):
+        if _dcol in df_obs.columns:
+            def _strip_ts(v, _dcol=_dcol):
+                if pd.isna(v) or str(v).strip() in ("", "nan", "NaT"): return ""
+                s = str(v).strip()
+                # If it looks like a datetime with space or T, take only the date part
+                for sep in (" ", "T"):
+                    if sep in s:
+                        s = s.split(sep)[0]
+                return s
+            df_obs[_dcol] = df_obs[_dcol].apply(_strip_ts)
+
     if "CAPA Status" in df_obs.columns:
         def _fmt_s(v):
             v = str(v).strip()
             if v in ("Closed", "Completed"): return f"✅ {v}"
-            if v == "Open":                  return f"\U0001f534 {v}"
+            if v == "Open":                  return f"🔴 {v}"
             if v == "Reopened":              return f"⚠️ {v}"
             return v
         df_obs["CAPA Status"] = df_obs["CAPA Status"].apply(_fmt_s)
 
-    st.markdown(f"**{len(df_obs)} Recommendation(s) for this Audit**")
-    _render_html_table(df_obs, max_height=650)
+    # ── Custom HTML table: headers centered, data left+top aligned ────────────
+    _LONG_COLS = {"Observation Comment", "Recommendation", "Action Taken Current Status"}
+    _hth = "background:#003087;color:#fff;font-weight:700;text-align:center;padding:8px 10px;font-size:12px;border-right:1px solid #1a5fb4;white-space:nowrap;"
+
+    hdr_html = f"<th style='{_hth}'>S.No</th>"
+    for c in df_obs.columns:
+        hdr_html += f"<th style='{_hth}'>{html.escape(str(c))}</th>"
+
+    rows_html = ""
+    for i, (_, row) in enumerate(df_obs.iterrows()):
+        _bg = "#ffffff" if i % 2 == 0 else "#f0f7ff"
+        row_html = f"<tr style='background:{_bg};vertical-align:top;'>"
+        row_html += f"<td style='text-align:center;font-weight:700;padding:7px 8px;font-size:12px;border-bottom:1px solid #e2eaf4;border-right:1px solid #e2eaf4;white-space:nowrap;color:#003087;'>{i+1}</td>"
+        for col, val in zip(df_obs.columns, row):
+            val_str = "" if pd.isna(val) else str(val)
+            if col in _LONG_COLS:
+                row_html += (
+                    f"<td style='text-align:left;vertical-align:top;padding:7px 10px;font-size:12px;"
+                    f"border-bottom:1px solid #e2eaf4;border-right:1px solid #e2eaf4;"
+                    f"min-width:180px;max-width:320px;word-wrap:break-word;white-space:pre-wrap;'>"
+                    f"{html.escape(val_str)}</td>"
+                )
+            else:
+                row_html += (
+                    f"<td style='text-align:left;vertical-align:top;padding:7px 10px;font-size:12px;"
+                    f"border-bottom:1px solid #e2eaf4;border-right:1px solid #e2eaf4;white-space:nowrap;'>"
+                    f"{html.escape(val_str)}</td>"
+                )
+        row_html += "</tr>"
+        rows_html += row_html
+
+    obs_table_html = (
+        f"<p style='font-weight:700;color:#003087;font-size:13px;margin:6px 0 4px 0;'>"
+        f"&#128196; {len(df_obs)} Recommendation(s) for this Audit</p>"
+        f"<div style='overflow-x:hidden;overflow-y:auto;max-height:650px;border-radius:8px;"
+        f"border:1px solid #d5e2f3;background:#fff;box-shadow:0 2px 8px #e0e0e0;margin:4px 0 10px 0;'>"
+        f"<table style='border-collapse:collapse;width:100%;font-size:12px;'>"
+        f"<thead><tr>{hdr_html}</tr></thead>"
+        f"<tbody>{rows_html}</tbody>"
+        f"</table></div>"
+    )
+    st.markdown(obs_table_html, unsafe_allow_html=True)
 
     _download_excel_button(
         label="⬇  Download Observation Detail  (.xlsx)",
@@ -129,32 +201,29 @@ def render_location_visit_details(df: pd.DataFrame) -> None:
     Level-1 drill-down: Location Visit & Compliance Analysis.
     df: aggregated audit-level data (one row per plant+audit), with FY and Quarter columns.
     """
-    # Sub-page routing — observation detail lives inside this drill-down
     if st.session_state.get("lv_sub_page") == "obs_detail":
         render_location_visit_observation_detail()
         return
 
-    # ── Header & back button ──────────────────────────────────────────────────
-    st.markdown(
-        "<div class='sec-title'>&#128205; Location Visit &amp; Compliance Analysis</div>",
+    # Title + back button on same row (title left, button right)
+    _hdr_l, _hdr_r = st.columns([4, 1])
+    _hdr_l.markdown(
+        "<div class='sec-title' style='margin-bottom:4px;'>&#128205; Location Visit &amp; Compliance Analysis</div>",
         unsafe_allow_html=True,
     )
-    back_col, _ = st.columns([1, 7])
-    with back_col:
-        if st.button("⬅ Back to Dashboard", key="btn_back_location_visit"):
-            st.session_state["location_visit_page"] = "main"
-            st.session_state["lv_sub_page"] = "summary"
-            st.session_state["selected_tile"] = None
-            st.session_state["dummy_tank_clicked"] = False
-            st.session_state["pl_unblock_clicked"] = False
-            st.session_state["tank_turns_page"] = "main"
-            st.rerun()
+    if _hdr_r.button("⬅ Back to Dashboard", key="btn_back_location_visit", use_container_width=True):
+        st.session_state["location_visit_page"] = "main"
+        st.session_state["lv_sub_page"] = "summary"
+        st.session_state["selected_tile"] = None
+        st.session_state["dummy_tank_clicked"] = False
+        st.session_state["pl_unblock_clicked"] = False
+        st.session_state["tank_turns_page"] = "main"
+        st.rerun()
 
     if df is None or df.empty:
         st.warning("No data available. Check file upload or data source.")
         return
 
-    # Ensure FY / Quarter columns (derive from Audit Start Date if absent)
     if "FY" not in df.columns or "Quarter" not in df.columns:
         def _fy_q(dt):
             if pd.isna(dt): return ("Unknown", "Unknown")
@@ -171,20 +240,15 @@ def render_location_visit_details(df: pd.DataFrame) -> None:
     # ── Filters ───────────────────────────────────────────────────────────────
     st.markdown("<div class='sec-title'>&#128269; Filters</div>", unsafe_allow_html=True)
     f1, f2, f3, f4 = st.columns(4)
-
     _zones = sorted(df["Zone"].fillna("").astype(str).str.strip().replace("", pd.NA).dropna().unique().tolist())
     sel_zone = f1.selectbox("Zone", ["All"] + _zones, key="lv_f_zone")
-
     _dz = df if sel_zone == "All" else df[df["Zone"].astype(str).str.strip() == sel_zone]
     _plants = sorted(_dz["Plant Desc."].fillna("").astype(str).str.strip().replace("", pd.NA).dropna().unique().tolist())
     sel_plant = f2.selectbox("Location", ["All"] + _plants, key="lv_f_plant")
-
     _fy_opts = sorted(df["FY"].fillna("Unknown").astype(str).unique().tolist(), reverse=True)
     sel_fy = f3.selectbox("Financial Year", ["All"] + _fy_opts, key="lv_f_fy")
-
     sel_qtr = f4.selectbox("Quarter", ["All", "Q1", "Q2", "Q3", "Q4"], key="lv_f_qtr")
 
-    # Apply filters
     dv = df.copy()
     if sel_zone  != "All": dv = dv[dv["Zone"].astype(str).str.strip() == sel_zone]
     if sel_plant != "All": dv = dv[dv["Plant Desc."].astype(str).str.strip() == sel_plant]
@@ -204,32 +268,148 @@ def render_location_visit_details(df: pd.DataFrame) -> None:
     comp_pct = (closed_r / total_r * 100) if total_r > 0 else 0.0
     comp_icon = "✅" if comp_pct >= 75 else ("⚠️" if comp_pct >= 50 else "❌")
 
-    # ── 5-card KPI summary ────────────────────────────────────────────────────
-    st.markdown("<div class='sec-title'>&#128202; Overall Summary</div>", unsafe_allow_html=True)
-    k1, k2, k3, k4, k5 = st.columns(5)
-    k1.metric("Audited Locations", f"{audits:,}")
-    k2.metric("Total Recommendations", f"{total_r:,}")
-    k3.metric("\U0001f534 Open", f"{open_r:,}")
-    k4.metric("\U0001f7e2 Closed / Complied", f"{closed_r:,}")
-    k5.metric(f"Overall Compliance {comp_icon}", f"{comp_pct:.1f}%")
+    def _comp_color(pct):
+        return "#2e7d32" if pct >= 75 else ("#F57C00" if pct >= 50 else "#c62828")
 
-    st.markdown("---")
+    _comp_clr = _comp_color(comp_pct)
+
+    # ── Section index (quick navigation — single row) ────────────────────────
+    _lnk = ("color:#003087;font-weight:600;font-size:11px;text-decoration:none;"
+             "background:#ddeeff;padding:2px 8px;border-radius:10px;white-space:nowrap;")
+    _toc_html = (
+        "<div style='background:#f0f7ff;border-left:4px solid #003087;border-radius:6px;"
+        "padding:6px 12px;margin:4px 0 10px 0;display:flex;align-items:center;flex-wrap:nowrap;gap:5px;overflow-x:auto;'>"
+        "<span style='font-weight:700;color:#003087;font-size:11px;white-space:nowrap;'>&#128196; Go to:&nbsp;</span>"
+        f"<a href='#lv-kpi' style='{_lnk}'>&#128202; KPI</a>"
+        f"<a href='#lv-zone' style='{_lnk}'>&#128506; Zone</a>"
+        f"<a href='#lv-quarter' style='{_lnk}'>&#128197; Quarter</a>"
+        f"<a href='#lv-audit' style='{_lnk}'>&#128203; Audit Detail</a>"
+        f"<a href='#lv-perf-zone' style='{_lnk}'>&#128202; Zone Chart</a>"
+        f"<a href='#lv-perf-loc' style='{_lnk}'>&#128205; Location Chart</a>"
+        f"<a href='#lv-rank-zone' style='{_lnk}'>&#127941; Zone Rank</a>"
+        f"<a href='#lv-rank-loc' style='{_lnk}'>&#127941; Loc Rank</a>"
+        f"<a href='#lv-missing' style='{_lnk}'>&#9888; Missing</a>"
+        "</div>"
+    )
+    st.markdown(_toc_html, unsafe_allow_html=True)
+
+    # ── 5-card KPI summary ────────────────────────────────────────────────────
+    st.markdown("<a id='lv-kpi'></a><div class='sec-title'>&#128202; Overall Summary</div>", unsafe_allow_html=True)
+    _cards_html = f"""
+    <div style="display:flex;gap:10px;margin:6px 0 12px 0;flex-wrap:wrap;">
+      <div style="flex:1;min-width:110px;background:linear-gradient(135deg,#003087,#0057A8);border-radius:9px;padding:13px 8px;text-align:center;color:#fff;box-shadow:0 3px 10px rgba(0,48,135,0.2);">
+        <div style="font-size:26px;font-weight:800;">{audits:,}</div>
+        <div style="font-size:12px;font-weight:600;margin-top:4px;opacity:.9;">&#128506; Audited Locations</div>
+      </div>
+      <div style="flex:1;min-width:110px;background:linear-gradient(135deg,#37474F,#546E7A);border-radius:9px;padding:13px 8px;text-align:center;color:#fff;box-shadow:0 3px 10px rgba(0,0,0,0.15);">
+        <div style="font-size:26px;font-weight:800;">{total_r:,}</div>
+        <div style="font-size:12px;font-weight:600;margin-top:4px;opacity:.9;">&#128203; Total Recommendations</div>
+      </div>
+      <div style="flex:1;min-width:110px;background:linear-gradient(135deg,#c62828,#d32f2f);border-radius:9px;padding:13px 8px;text-align:center;color:#fff;box-shadow:0 3px 10px rgba(198,40,40,0.22);">
+        <div style="font-size:26px;font-weight:800;">{open_r:,}</div>
+        <div style="font-size:12px;font-weight:600;margin-top:4px;opacity:.9;">&#128308; Open Recommendations</div>
+      </div>
+      <div style="flex:1;min-width:110px;background:linear-gradient(135deg,#2e7d32,#388e3c);border-radius:9px;padding:13px 8px;text-align:center;color:#fff;box-shadow:0 3px 10px rgba(46,125,50,0.22);">
+        <div style="font-size:26px;font-weight:800;">{closed_r:,}</div>
+        <div style="font-size:12px;font-weight:600;margin-top:4px;opacity:.9;">&#128994; Closed / Complied</div>
+      </div>
+      <div style="flex:1;min-width:110px;background:linear-gradient(135deg,{_comp_clr},{_comp_clr}cc);border-radius:9px;padding:13px 8px;text-align:center;color:#fff;box-shadow:0 3px 10px rgba(0,0,0,0.18);">
+        <div style="font-size:26px;font-weight:800;">{comp_pct:.1f}%</div>
+        <div style="font-size:12px;font-weight:600;margin-top:4px;opacity:.9;">{comp_icon} Overall Compliance</div>
+      </div>
+    </div>"""
+    st.markdown(_cards_html, unsafe_allow_html=True)
+
+    # ── Shared helpers ────────────────────────────────────────────────────────
+    _ZONE_COLORS = {
+        "COZ": "#E65100", "NOZ": "#003087", "SOZ": "#2e7d32",
+        "WOZ": "#AD1457", "EOZ": "#6A1B9A", "Unmapped": "#546E7A",
+    }
+    def _zone_badge(z):
+        z_up = str(z).strip().upper()
+        clr = _ZONE_COLORS.get(z_up, "#546E7A")
+        return f"<span style='background:{clr};color:#fff;font-weight:700;padding:2px 8px;border-radius:10px;font-size:11px;letter-spacing:.4px;'>{html.escape(z_up)}</span>"
+
+    def _comp_badge(pct):
+        clr = _comp_color(pct)
+        return f"<span style='background:{clr};color:#fff;font-weight:700;padding:2px 8px;border-radius:10px;font-size:11px;'>{pct:.1f}%</span>"
+
+    def _progress_bar(pct):
+        fill = min(max(pct, 0), 100)
+        clr = _comp_color(pct)
+        return (
+            f"<div style='background:#e0e0e0;border-radius:6px;height:11px;width:100%;min-width:80px;'>"
+            f"<div style='background:{clr};width:{fill:.0f}%;height:11px;border-radius:6px;'></div></div>"
+        )
+
+    _th = "padding:7px 10px;font-weight:700;border-bottom:2px solid #d5e2f3;font-size:12px;"
+
+    def _rank_badge(rank):
+        if rank == 1:
+            return "<span style='background:linear-gradient(135deg,#DAA520,#FFD700);color:#5a3200;font-weight:900;padding:2px 9px;border-radius:6px;font-size:12px;'>&#11088; 1st</span>"
+        if rank == 2:
+            return "<span style='background:linear-gradient(135deg,#9E9E9E,#BDBDBD);color:#1a1a1a;font-weight:900;padding:2px 9px;border-radius:6px;font-size:12px;'>&#9733; 2nd</span>"
+        if rank == 3:
+            return "<span style='background:linear-gradient(135deg,#8D4E1B,#CD7F32);color:#fff;font-weight:900;padding:2px 9px;border-radius:6px;font-size:12px;'>&#9733; 3rd</span>"
+        return f"<span style='color:#555;font-size:12px;font-weight:600;'>{rank}</span>"
 
     # ── Zone-wise Summary ─────────────────────────────────────────────────────
+    st.markdown("<a id='lv-zone'></a>", unsafe_allow_html=True)
     st.markdown("<div class='sec-title'>&#128506; Zone-wise Summary</div>", unsafe_allow_html=True)
     _zg = dv.assign(_t=_n(dv["TotalRecomms"]), _c=_n(dv["ClosedRecomms"]), _o=_n(dv["OpenRecomms"]))
     zone_tbl = (
         _zg.groupby("Zone", as_index=False)
         .agg(Locations=("Planning Plant","count"), Total=("_t","sum"), Open=("_o","sum"), Closed=("_c","sum"))
-        .sort_values("Closed", ascending=False)
-        .reset_index(drop=True)
     )
-    zone_tbl["Compliance %"] = zone_tbl.apply(
-        lambda r: f"{r.Closed/r.Total*100:.1f}%" if r.Total > 0 else "N/A", axis=1
+    zone_tbl["_comp"] = zone_tbl.apply(lambda r: r.Closed/r.Total*100 if r.Total > 0 else 0.0, axis=1)
+    zone_tbl = zone_tbl.sort_values("_comp", ascending=False).reset_index(drop=True)
+
+    _zth = "padding:9px 12px;font-weight:700;border-bottom:2px solid #d5e2f3;font-size:13px;"
+    _zone_rows = ""
+    for i, r in zone_tbl.iterrows():
+        _bg = "#ffffff" if i % 2 == 0 else "#f7fafd"
+        _zone_rows += (
+            f"<tr style='background:{_bg};'>"
+            f"<td style='padding:9px 12px;font-size:14px;'>{_zone_badge(r.Zone)}</td>"
+            f"<td style='padding:9px 12px;text-align:center;font-weight:600;font-size:14px;'>{int(r.Locations)}</td>"
+            f"<td style='padding:9px 12px;text-align:center;font-weight:600;font-size:14px;'>{int(r.Total):,}</td>"
+            f"<td style='padding:9px 12px;text-align:center;font-weight:700;color:#c62828;font-size:15px;'>{int(r.Open):,}</td>"
+            f"<td style='padding:9px 12px;text-align:center;font-weight:700;color:#2e7d32;font-size:15px;'>{int(r.Closed):,}</td>"
+            f"<td style='padding:9px 12px;text-align:center;'>{_comp_badge(r._comp)}</td>"
+            f"<td style='padding:9px 14px;min-width:100px;'>{_progress_bar(r._comp)}</td>"
+            f"</tr>"
+        )
+    _gt_comp = closed_r / total_r * 100 if total_r > 0 else 0.0
+    _zone_rows += (
+        f"<tr style='background:#e8f0fe;font-weight:800;border-top:2px solid #003087;'>"
+        f"<td style='padding:9px 12px;color:#003087;font-weight:800;font-size:13px;'>&#9646; TOTAL / OVERALL</td>"
+        f"<td style='padding:9px 12px;text-align:center;color:#003087;font-size:14px;'>{audits}</td>"
+        f"<td style='padding:9px 12px;text-align:center;color:#003087;font-size:14px;'>{total_r:,}</td>"
+        f"<td style='padding:9px 12px;text-align:center;color:#c62828;font-size:15px;'>{open_r:,}</td>"
+        f"<td style='padding:9px 12px;text-align:center;color:#2e7d32;font-size:15px;'>{closed_r:,}</td>"
+        f"<td style='padding:9px 12px;text-align:center;'>{_comp_badge(_gt_comp)}</td>"
+        f"<td style='padding:9px 14px;min-width:100px;'>{_progress_bar(_gt_comp)}</td>"
+        f"</tr>"
     )
-    _render_html_table(zone_tbl, max_height=350)
+    _zone_html = (
+        "<div style='margin:6px 0 14px 0;'>"
+        "<table style='border-collapse:collapse;width:100%;font-size:14px;'>"
+        f"<thead><tr style='background:#eaf2fb;'>"
+        f"<th style='{_zth}text-align:left;color:#003087;'>Zone</th>"
+        f"<th style='{_zth}text-align:center;color:#003087;'>Locations</th>"
+        f"<th style='{_zth}text-align:center;color:#003087;'>Total Recomms</th>"
+        f"<th style='{_zth}text-align:center;color:#c62828;'>Open</th>"
+        f"<th style='{_zth}text-align:center;color:#2e7d32;'>Closed</th>"
+        f"<th style='{_zth}text-align:center;color:#003087;'>Compliance %</th>"
+        f"<th style='{_zth}text-align:left;color:#003087;'>Progress</th>"
+        f"</tr></thead>"
+        f"<tbody>{_zone_rows}</tbody>"
+        "</table></div>"
+    )
+    st.markdown(_zone_html, unsafe_allow_html=True)
 
     # ── Quarter-wise Summary ──────────────────────────────────────────────────
+    st.markdown("<a id='lv-quarter'></a>", unsafe_allow_html=True)
     st.markdown("<div class='sec-title'>&#128197; Quarter-wise Summary</div>", unsafe_allow_html=True)
     _qg = dv.assign(_t=_n(dv["TotalRecomms"]), _c=_n(dv["ClosedRecomms"]), _o=_n(dv["OpenRecomms"]))
     qtr_tbl = (
@@ -243,123 +423,289 @@ def render_location_visit_details(df: pd.DataFrame) -> None:
     )
     _render_html_table(qtr_tbl, max_height=300)
 
-    # ── Audit Detail Table with observation drill-through ─────────────────────
+    # ── Audit Detail Table ────────────────────────────────────────────────────
+    st.markdown("<a id='lv-audit'></a>", unsafe_allow_html=True)
     st.markdown("<div class='sec-title'>&#128203; Audit Detail by Location</div>", unsafe_allow_html=True)
-    st.caption("Select an audit below and click ‘View Observations’ to see full observations, recommendations, and action-taken details.")
+    st.caption("Sorted by compliance (highest first). Select an audit and click 'View Observations' for full details.")
 
-    _req = ["Planning Plant", "Plant Desc.", "Zone", "FY", "Quarter",
+    # Build audit table: exclude FY and Quarter (already in filter), add S.No, sort by compliance desc
+    _req = ["Planning Plant", "Plant Desc.", "Zone",
             "Audit Number", "Audit Start Date", "Audit End Date",
             "TotalRecomms", "OpenRecomms", "ClosedRecomms"]
     audit_tbl = dv[[c for c in _req if c in dv.columns]].copy()
-    audit_tbl["Compliance %"] = audit_tbl.apply(
-        lambda r: f"{_n(pd.Series([r['ClosedRecomms']])).sum() / max(_n(pd.Series([r['TotalRecomms']])).sum(), 1) * 100:.1f}%",
+    audit_tbl["_comp_num"] = audit_tbl.apply(
+        lambda r: _n(pd.Series([r["ClosedRecomms"]])).sum() / max(_n(pd.Series([r["TotalRecomms"]])).sum(), 1) * 100,
         axis=1,
     )
-    audit_tbl = audit_tbl.sort_values(["Zone", "Plant Desc.", "FY", "Quarter"]).reset_index(drop=True)
-    _render_html_table(audit_tbl, max_height=420)
+    audit_tbl["Compliance %"] = audit_tbl["_comp_num"].apply(lambda x: f"{x:.1f}%")
+    audit_tbl = audit_tbl.sort_values("_comp_num", ascending=False).drop(columns=["_comp_num"]).reset_index(drop=True)
+    audit_tbl.insert(0, "S.No", range(1, len(audit_tbl)+1))
 
-    # Observation drill-through selector
+    # Zone name → short code for compact badge in audit table
+    _ZONE_ABBR = {
+        "south central zone": "SCZ", "north west zone": "NWZ",
+        "north central zone": "NCZ", "cochin zone": "COZ",
+        "south west zone": "SWZ",   "south zone": "SZ",
+        "north zone": "NZ",          "west zone": "WZ",
+        "east zone": "EZ",           "guwahati zone": "GUZ",
+        "bhubneshwar zone": "BBZ",   "bengaluru zone": "BRZ",
+        "bhopal zone": "BLZ",        "jaipur zone": "JPZ",
+        "chandigarh zone": "CDZ",    "patna zone": "PNZ",
+        "noida (up-west) zone": "NDZ", "noida zone": "NDZ",
+        "unmapped": "—",
+    }
+    _ZONE_ABBR_CLR = {
+        "SCZ": "#00695C", "NWZ": "#283593", "NCZ": "#1565C0",
+        "COZ": "#BF360C", "SWZ": "#4A148C", "SZ":  "#558B2F",
+        "NZ":  "#003087", "WZ":  "#AD1457", "EZ":  "#6A1B9A",
+        "GUZ": "#00838F", "BBZ": "#4E342E", "BRZ": "#2E7D32",
+        "BLZ": "#E65100", "JPZ": "#F57F17", "CDZ": "#37474F",
+        "PNZ": "#880E4F", "NDZ": "#0277BD", "—":  "#546E7A",
+    }
+    def _zone_abbr_badge(zone_name):
+        key = str(zone_name).strip().lower()
+        code = _ZONE_ABBR.get(key, "".join(w[0] for w in key.split() if w != "zone").upper()[:4] or "?")
+        clr = _ZONE_ABBR_CLR.get(code, "#546E7A")
+        return (
+            f"<span style='background:{clr};color:#fff;font-weight:700;"
+            f"padding:3px 6px;border-radius:8px;font-size:11px;"
+            f"letter-spacing:.5px;white-space:nowrap;'>{html.escape(code)}</span>"
+        )
+
+    # Custom HTML table — fixed column widths, no horizontal scroll
+    _ath  = "padding:7px 6px;font-weight:700;border-bottom:2px solid #c3d5ea;font-size:12px;text-align:center;white-space:nowrap;color:#003087;"
+    _ath_l= "padding:7px 8px;font-weight:700;border-bottom:2px solid #c3d5ea;font-size:12px;text-align:left;white-space:nowrap;color:#003087;"
+    _audit_hdr = (
+        f"<th style='width:38px;{_ath}'>S.No</th>"
+        f"<th style='width:58px;{_ath}'>Plant<br>Code</th>"
+        f"<th style='{_ath_l}'>Location</th>"
+        f"<th style='width:52px;{_ath}'>Zone</th>"
+        f"<th style='width:120px;{_ath_l}'>Audit Number</th>"
+        f"<th style='width:72px;{_ath}'>Start<br>Date</th>"
+        f"<th style='width:72px;{_ath}'>End<br>Date</th>"
+        f"<th style='width:44px;{_ath}'>Rec.</th>"
+        f"<th style='width:44px;{_ath}color:#c62828;'>Open</th>"
+        f"<th style='width:50px;{_ath}color:#2e7d32;'>Closed</th>"
+        f"<th style='width:68px;{_ath}'>Comp.%</th>"
+    )
+    _audit_rows = ""
+    for i, r in audit_tbl.iterrows():
+        _bg = "#ffffff" if i % 2 == 0 else "#f4f8ff"
+        _td  = "padding:6px 6px;font-size:12px;border-bottom:1px solid #e2eaf4;text-align:center;vertical-align:middle;"
+        _td_l= "padding:6px 8px;font-size:12px;border-bottom:1px solid #e2eaf4;text-align:left;vertical-align:middle;white-space:normal;word-wrap:break-word;"
+        _comp_val = float(str(r['Compliance %']).rstrip('%')) if str(r.get('Compliance %','N/A')) != 'N/A' else 0.0
+        _audit_rows += (
+            f"<tr style='background:{_bg};'>"
+            f"<td style='{_td}font-weight:700;color:#003087;'>{int(r['S.No'])}</td>"
+            f"<td style='{_td}font-weight:600;'>{html.escape(str(r['Planning Plant']))}</td>"
+            f"<td style='{_td_l}font-weight:600;'>{html.escape(str(r.get('Plant Desc.','') if 'Plant Desc.' in r.index else ''))}</td>"
+            f"<td style='{_td}'>{_zone_abbr_badge(r.get('Zone','') if 'Zone' in r.index else '')}</td>"
+            f"<td style='{_td}font-size:11px;word-break:break-all;text-align:left;padding:6px 8px;'>{html.escape(str(r.get('Audit Number','') if 'Audit Number' in r.index else ''))}</td>"
+            f"<td style='{_td}font-size:11px;'>{html.escape(str(r.get('Audit Start Date','') if 'Audit Start Date' in r.index else ''))}</td>"
+            f"<td style='{_td}font-size:11px;'>{html.escape(str(r.get('Audit End Date','') if 'Audit End Date' in r.index else ''))}</td>"
+            f"<td style='{_td}font-weight:600;'>{int(_n(pd.Series([r.get('TotalRecomms',0)])).sum())}</td>"
+            f"<td style='{_td}font-weight:700;color:#c62828;'>{int(_n(pd.Series([r.get('OpenRecomms',0)])).sum())}</td>"
+            f"<td style='{_td}font-weight:700;color:#2e7d32;'>{int(_n(pd.Series([r.get('ClosedRecomms',0)])).sum())}</td>"
+            f"<td style='{_td}'>{_comp_badge(_comp_val)}</td>"
+            f"</tr>"
+        )
+    _audit_html = (
+        "<div style='overflow-x:hidden;overflow-y:auto;max-height:440px;margin:6px 0 10px 0;"
+        "border-radius:8px;border:1px solid #d5e2f3;box-shadow:0 2px 8px #e0e0e0;'>"
+        "<table style='border-collapse:collapse;width:100%;table-layout:fixed;font-size:12px;'>"
+        f"<thead><tr style='background:#dce8f7;position:sticky;top:0;z-index:1;'>{_audit_hdr}</tr></thead>"
+        f"<tbody>{_audit_rows}</tbody>"
+        "</table></div>"
+    )
+    st.markdown(_audit_html, unsafe_allow_html=True)
+
+    # Styled observation drill-through selector
+    st.markdown(
+        "<div style='background:#f0f7ff;border:1.5px solid #003087;border-radius:8px;"
+        "padding:10px 14px;margin:8px 0 6px 0;'>"
+        "<div style='font-size:12px;font-weight:700;color:#003087;margin-bottom:6px;'>"
+        "&#128203; View Detailed Observations for an Audit:</div>",
+        unsafe_allow_html=True,
+    )
     _audit_keys = [
-        f"{row['Audit Number']} | {row['Plant Desc.']} ({row['Planning Plant']}) | {row['FY']} {row['Quarter']}"
+        f"{row['Audit Number']} | {row['Plant Desc.']} ({row['Planning Plant']})"
         for _, row in audit_tbl.iterrows()
+        if 'Audit Number' in row.index and 'Plant Desc.' in row.index
     ]
     obs_c1, obs_c2 = st.columns([4, 1])
     sel_audit_key = obs_c1.selectbox(
-        "Select an audit to view observations:",
+        "Select audit:",
         _audit_keys if _audit_keys else ["(no audits)"],
         key="lv_sel_audit",
+        label_visibility="collapsed",
     )
     if obs_c2.button("&#128203; View Observations", key="btn_view_obs", use_container_width=True):
         if _audit_keys:
             _idx = _audit_keys.index(sel_audit_key)
             _row = audit_tbl.iloc[_idx]
-            st.session_state["lv_obs_audit_no"]  = _row["Audit Number"]
-            st.session_state["lv_obs_plant"]     = _row["Planning Plant"]
-            st.session_state["lv_obs_plant_desc"] = _row["Plant Desc."]
-            st.session_state["lv_obs_zone"]      = _row["Zone"]
-            st.session_state["lv_obs_fy"]        = _row["FY"]
-            st.session_state["lv_obs_quarter"]   = _row["Quarter"]
-            st.session_state["lv_sub_page"]      = "obs_detail"
+            _match = dv[
+                (dv["Planning Plant"].astype(str) == str(_row["Planning Plant"])) &
+                (dv["Audit Number"].astype(str) == str(_row["Audit Number"]))
+            ]
+            _fy_val  = _match["FY"].iloc[0]  if not _match.empty and "FY"      in _match.columns else ""
+            _qtr_val = _match["Quarter"].iloc[0] if not _match.empty and "Quarter" in _match.columns else ""
+            st.session_state["lv_obs_audit_no"]   = _row["Audit Number"]
+            st.session_state["lv_obs_plant"]      = _row.get("Planning Plant", "")
+            st.session_state["lv_obs_plant_desc"] = _row.get("Plant Desc.", "")
+            st.session_state["lv_obs_zone"]       = _row.get("Zone", "")
+            st.session_state["lv_obs_fy"]         = _fy_val
+            st.session_state["lv_obs_quarter"]    = _qtr_val
+            st.session_state["lv_sub_page"]       = "obs_detail"
             st.rerun()
+    st.markdown("</div>", unsafe_allow_html=True)
 
-    st.markdown("---")
-
-    # ── Performance Analysis ──────────────────────────────────────────────────
+    # ── Performance Analysis — Zone Chart (full width) ────────────────────────
+    st.markdown("<a id='lv-perf-zone'></a>", unsafe_allow_html=True)
     st.markdown(
-        "<div class='sec-title'>&#128202; Performance Analysis &mdash; Zone &amp; Location Comparison</div>",
+        "<div class='sec-title'>&#128202; Performance Analysis &mdash; Zone-wise Compliance</div>",
         unsafe_allow_html=True,
     )
-    st.caption("Quickly identify top-performing and under-performing zones and locations. The 75% dashed line marks the target threshold.")
-
     _zone_c = zone_tbl.copy()
-    _zone_c["_pct"] = _zone_c.apply(lambda r: r.Closed/r.Total*100 if r.Total > 0 else 0.0, axis=1)
+    _zone_c["Zone_Label"] = _zone_c["Zone"].astype(str).str.upper()
     fig_zone = px.bar(
-        _zone_c, x="Zone", y="_pct",
-        color="_pct", color_continuous_scale=["#c62828","#f57c00","#2e7d32"],
+        _zone_c, x="Zone_Label", y="_comp",
+        color="_comp", color_continuous_scale=["#c62828","#f57c00","#2e7d32"],
         range_color=[0, 100],
-        text=_zone_c["_pct"].apply(lambda x: f"{x:.1f}%"),
-        title="Compliance % by Zone",
-        labels={"_pct": "Compliance %"},
+        text=_zone_c["_comp"].apply(lambda x: f"{x:.1f}%"),
+        title="Compliance % by Zone  (75% dashed line = target)",
+        labels={"_comp": "Compliance %", "Zone_Label": "Zone"},
     )
-    fig_zone.add_hline(y=75, line_dash="dash", line_color="#2e7d32",
-                       annotation_text="75% Target", annotation_position="top right")
-    fig_zone.update_traces(textposition="outside")
-    fig_zone.update_layout(height=380, coloraxis_showscale=False,
-                           margin=dict(l=20,r=20,t=50,b=20),
-                           yaxis=dict(title="Compliance %", range=[0,115]))
+    fig_zone.add_hline(
+        y=75, line_dash="dash", line_color="#003087", line_width=2,
+        annotation_text="<b>75% Target</b>", annotation_position="top right",
+        annotation_font_color="#003087", annotation_font_size=13,
+    )
+    fig_zone.update_traces(textposition="outside", textfont_size=13, textfont_color="#1a1a1a")
+    fig_zone.update_layout(
+        height=420, coloraxis_showscale=False,
+        margin=dict(l=30, r=30, t=60, b=60),
+        yaxis=dict(title="Compliance %", range=[0, 120], tickfont=dict(size=12, color="#1a1a1a")),
+        xaxis=dict(tickfont=dict(size=13, color="#111111", family="Arial Black")),
+        title_font=dict(size=14, color="#003087"),
+        plot_bgcolor="#f8fafd", paper_bgcolor="#f8fafd",
+    )
+    st.plotly_chart(fig_zone, use_container_width=True)
 
+    # ── Performance Analysis — Location Chart (full width) ────────────────────
+    st.markdown("<a id='lv-perf-loc'></a>", unsafe_allow_html=True)
+    st.markdown(
+        "<div class='sec-title'>&#128205; Performance Analysis &mdash; Location-wise Compliance</div>",
+        unsafe_allow_html=True,
+    )
     _lg = dv.assign(_t=_n(dv["TotalRecomms"]), _c=_n(dv["ClosedRecomms"]), _o=_n(dv["OpenRecomms"]))
     loc_chart = (
         _lg.groupby(["Planning Plant","Plant Desc.","Zone"], as_index=False)
         .agg(Total=("_t","sum"), Closed=("_c","sum"), Open=("_o","sum"))
     )
-    loc_chart["Compliance %"] = loc_chart.apply(
+    loc_chart["_pct"] = loc_chart.apply(
         lambda r: r.Closed/r.Total*100 if r.Total > 0 else 0.0, axis=1
     )
-    loc_chart["Label"] = loc_chart["Plant Desc."].astype(str).str[:22]
-    loc_chart = loc_chart.sort_values("Compliance %")
+    loc_chart["Label"] = loc_chart["Plant Desc."].astype(str).str[:28]
+    loc_chart = loc_chart.sort_values("_pct")
+    _loc_h = max(500, len(loc_chart) * 28)
     fig_loc = px.bar(
-        loc_chart, x="Compliance %", y="Label",
+        loc_chart, x="_pct", y="Label",
         orientation="h",
-        color="Compliance %", color_continuous_scale=["#c62828","#f57c00","#2e7d32"],
+        color="_pct", color_continuous_scale=["#c62828","#f57c00","#2e7d32"],
         range_color=[0, 100],
-        text=loc_chart["Compliance %"].apply(lambda x: f"{x:.1f}%"),
-        title="Location-wise Compliance %",
-        labels={"Compliance %": "Compliance %", "Label": ""},
+        text=loc_chart["_pct"].apply(lambda x: f"{x:.1f}%"),
+        title="Location-wise Compliance %  (75% dashed line = target)",
+        labels={"_pct": "Compliance %", "Label": ""},
     )
-    fig_loc.add_vline(x=75, line_dash="dash", line_color="#2e7d32", annotation_text="75%")
-    fig_loc.update_traces(textposition="outside")
-    fig_loc.update_layout(height=max(380, len(loc_chart)*26), coloraxis_showscale=False,
-                          margin=dict(l=20,r=20,t=50,b=20),
-                          xaxis=dict(range=[0,120]))
-
-    ch1, ch2 = st.columns([1, 2])
-    with ch1:
-        st.plotly_chart(fig_zone, use_container_width=True)
-    with ch2:
-        st.plotly_chart(fig_loc, use_container_width=True)
-
-    # Top 5 / Bottom 5 performers
-    st.markdown("<div class='sec-title'>&#127942; Top &amp; Bottom Performers</div>", unsafe_allow_html=True)
-    _perf = loc_chart.sort_values("Compliance %", ascending=False).copy()
-    _perf["Compliance %"] = _perf["Compliance %"].apply(lambda x: f"{x:.1f}%")
-    _perf_disp = _perf[["Plant Desc.","Zone","Total","Open","Closed","Compliance %"]].rename(
-        columns={"Plant Desc.": "Location"}
+    fig_loc.add_vline(
+        x=75, line_dash="dash", line_color="#003087", line_width=2,
+        annotation_text="<b>75%</b>", annotation_position="top right",
+        annotation_font_color="#003087", annotation_font_size=13,
     )
-    top5_col, bot5_col = st.columns(2)
-    with top5_col:
-        st.markdown("**\U0001f7e2 Top 5 Performers**")
-        _render_html_table(_perf_disp.head(5).reset_index(drop=True), max_height=250)
-    with bot5_col:
-        st.markdown("**\U0001f534 Bottom 5 Performers**")
-        _render_html_table(
-            _perf_disp.tail(5).sort_values("Compliance %").reset_index(drop=True),
-            max_height=250,
+    fig_loc.update_traces(textposition="outside", textfont_size=11)
+    fig_loc.update_layout(
+        height=_loc_h, coloraxis_showscale=False,
+        margin=dict(l=20, r=60, t=60, b=30),
+        xaxis=dict(range=[0, 125], tickfont=dict(size=12, color="#1a1a1a")),
+        yaxis=dict(tickfont=dict(size=11, color="#111111")),
+        title_font=dict(size=14, color="#003087"),
+        plot_bgcolor="#f8fafd", paper_bgcolor="#f8fafd",
+    )
+    st.plotly_chart(fig_loc, use_container_width=True)
+
+    # ── Zone-wise Compliance Ranking ──────────────────────────────────────────
+    st.markdown("<a id='lv-rank-zone'></a>", unsafe_allow_html=True)
+    st.markdown("<div class='sec-title'>&#127941; Zone-wise Compliance Ranking</div>", unsafe_allow_html=True)
+    _zr = zone_tbl.copy().sort_values("_comp", ascending=False).reset_index(drop=True)
+    _rth = "padding:8px 12px;font-weight:700;border-bottom:2px solid #1a5fb4;font-size:13px;"
+    _zrank_rows = ""
+    for i, r in _zr.iterrows():
+        rank = i + 1
+        _bg = "#fffde7" if rank == 1 else ("#f3f3f3" if rank == 2 else ("#fdf3ee" if rank == 3 else ("#ffffff" if rank % 2 == 1 else "#f7fafd")))
+        _zrank_rows += (
+            f"<tr style='background:{_bg};'>"
+            f"<td style='padding:8px 10px;text-align:center;font-size:14px;width:80px;'>{_rank_badge(rank)}</td>"
+            f"<td style='padding:8px 12px;font-size:14px;white-space:normal;word-wrap:break-word;'>{_zone_abbr_badge(r.Zone)}&nbsp;&nbsp;<span style='font-weight:600;font-size:13px;'>{html.escape(str(r.Zone))}</span></td>"
+            f"<td style='padding:8px 10px;text-align:center;font-weight:600;font-size:14px;width:80px;'>{int(r.Locations)}</td>"
+            f"<td style='padding:8px 10px;text-align:center;font-weight:700;color:#c62828;font-size:14px;width:75px;'>{int(r.Open):,}</td>"
+            f"<td style='padding:8px 10px;text-align:center;font-weight:700;color:#2e7d32;font-size:14px;width:75px;'>{int(r.Closed):,}</td>"
+            f"<td style='padding:8px 10px;text-align:center;font-size:14px;width:90px;'>{_comp_badge(r._comp)}</td>"
+            f"<td style='padding:8px 12px;width:120px;'>{_progress_bar(r._comp)}</td>"
+            f"</tr>"
         )
+    _zrank_html = (
+        "<div style='overflow-x:hidden;margin:6px 0 16px 0;border-radius:8px;"
+        "border:1px solid #d5e2f3;box-shadow:0 2px 8px #e0e0e0;'>"
+        "<table style='border-collapse:collapse;width:100%;font-size:14px;'>"
+        f"<thead><tr style='background:#003087;'>"
+        f"<th style='width:80px;{_rth}text-align:center;color:#fff;'>Rank</th>"
+        f"<th style='{_rth}text-align:left;color:#fff;'>Zone</th>"
+        f"<th style='width:80px;{_rth}text-align:center;color:#fff;'>Locations</th>"
+        f"<th style='width:75px;{_rth}text-align:center;color:#ffb3b3;'>Open</th>"
+        f"<th style='width:75px;{_rth}text-align:center;color:#b3ffb3;'>Closed</th>"
+        f"<th style='width:90px;{_rth}text-align:center;color:#fff;'>Compliance</th>"
+        f"<th style='width:120px;{_rth}text-align:left;color:#fff;'>Progress</th>"
+        f"</tr></thead><tbody>{_zrank_rows}</tbody></table></div>"
+    )
+    st.markdown(_zrank_html, unsafe_allow_html=True)
 
-    st.markdown("---")
+    # ── Location-wise Compliance Ranking ──────────────────────────────────────
+    st.markdown("<a id='lv-rank-loc'></a>", unsafe_allow_html=True)
+    st.markdown("<div class='sec-title'>&#127941; Location-wise Compliance Ranking</div>", unsafe_allow_html=True)
+    _lr = loc_chart.copy().sort_values("_pct", ascending=False).reset_index(drop=True)
+    _lrank_rows = ""
+    for i, r in _lr.iterrows():
+        rank = i + 1
+        _bg = "#fffde7" if rank == 1 else ("#f3f3f3" if rank == 2 else ("#fdf3ee" if rank == 3 else ("#ffffff" if rank % 2 == 1 else "#f7fafd")))
+        _lrank_rows += (
+            f"<tr style='background:{_bg};'>"
+            f"<td style='padding:8px 10px;text-align:center;font-size:14px;width:75px;'>{_rank_badge(rank)}</td>"
+            f"<td style='padding:8px 12px;font-weight:600;font-size:14px;white-space:normal;word-wrap:break-word;'>{html.escape(str(r['Plant Desc.']))}</td>"
+            f"<td style='padding:8px 10px;text-align:center;font-size:14px;width:65px;'>{_zone_abbr_badge(r.Zone)}</td>"
+            f"<td style='padding:8px 10px;text-align:center;font-weight:600;font-size:14px;width:60px;'>{int(r.Total):,}</td>"
+            f"<td style='padding:8px 10px;text-align:center;font-weight:700;color:#c62828;font-size:14px;width:60px;'>{int(r.Open):,}</td>"
+            f"<td style='padding:8px 10px;text-align:center;font-weight:700;color:#2e7d32;font-size:14px;width:60px;'>{int(r.Closed):,}</td>"
+            f"<td style='padding:8px 10px;text-align:center;font-size:14px;width:90px;'>{_comp_badge(r._pct)}</td>"
+            f"</tr>"
+        )
+    _lrank_html = (
+        "<div style='overflow-x:hidden;margin:6px 0 16px 0;max-height:520px;overflow-y:auto;"
+        "border-radius:8px;border:1px solid #d5e2f3;box-shadow:0 2px 8px #e0e0e0;'>"
+        "<table style='border-collapse:collapse;width:100%;font-size:14px;'>"
+        f"<thead><tr style='background:#003087;position:sticky;top:0;z-index:1;'>"
+        f"<th style='width:75px;{_rth}text-align:center;color:#fff;'>Rank</th>"
+        f"<th style='{_rth}text-align:left;color:#fff;'>Location</th>"
+        f"<th style='width:65px;{_rth}text-align:center;color:#fff;'>Zone</th>"
+        f"<th style='width:60px;{_rth}text-align:center;color:#fff;'>Total</th>"
+        f"<th style='width:60px;{_rth}text-align:center;color:#ffb3b3;'>Open</th>"
+        f"<th style='width:60px;{_rth}text-align:center;color:#b3ffb3;'>Closed</th>"
+        f"<th style='width:90px;{_rth}text-align:center;color:#fff;'>Compliance</th>"
+        f"</tr></thead><tbody>{_lrank_rows}</tbody></table></div>"
+    )
+    st.markdown(_lrank_html, unsafe_allow_html=True)
 
     # ── Missing Locations ─────────────────────────────────────────────────────
+    st.markdown("<a id='lv-missing'></a>", unsafe_allow_html=True)
     st.markdown("<div class='sec-title'>&#9888; Locations Not Yet Audited (in scope)</div>", unsafe_allow_html=True)
     _pm = load_plant_master()[["Plant Code","Plant Name","Zone Name"]].copy()
     _pm["Plant Code"] = _pm["Plant Code"].astype(str).str.strip().str.replace(r"\.0$","",regex=True)
@@ -385,8 +731,8 @@ def render_location_visit_details(df: pd.DataFrame) -> None:
         label="⬇  Download Drill-Down Data  (.xlsx)",
         file_prefix="location_visit_drilldown",
         sheets={
-            "Audit Detail":     audit_tbl.reset_index(drop=True),
-            "Zone Summary":     zone_tbl.reset_index(drop=True),
+            "Audit Detail":     audit_tbl.drop(columns=["S.No"], errors="ignore").reset_index(drop=True),
+            "Zone Summary":     zone_tbl.drop(columns=["_comp"], errors="ignore").reset_index(drop=True),
             "Quarter Summary":  qtr_tbl.reset_index(drop=True),
         },
         key="dl_loc_visit_drill",
@@ -631,7 +977,7 @@ def inject_css() -> None:
     .hpcl-banner-wrap {{
         margin: 0 -1rem !important;
         width: calc(100% + 2rem);
-        height: 110px;
+        height: 66px;
         line-height: 0;
         overflow: hidden;
         position: relative;
@@ -645,38 +991,39 @@ def inject_css() -> None:
         object-fit: contain;
         object-position: center;
         display: block;
-        padding: 0 10px 4px 10px;
+        padding: 0 10px 2px 10px;
         filter: drop-shadow(0 0 1px rgba(0, 48, 135, 0.9))
                 drop-shadow(0 0 2px rgba(0, 48, 135, 0.65));
     }}
-
     /* ── Info Strip below banner ──────────────────────── */
     .dash-header {{
         background: linear-gradient(135deg, {C['primary']} 0%, {C['secondary']} 100%);
         color: white;
-        padding: 8px 20px;
-        margin: 0 -1rem 14px -1rem;
+        padding: 6px 20px;
+        margin: 0 -1rem 10px -1rem;
         display: flex;
         align-items: center;
-        justify-content: center;
+        justify-content: space-between;
         position: relative;
         box-shadow: 0 3px 10px rgba(0,48,135,0.28);
     }}
     .dash-header-main {{
-        width: 100%;
+        flex: 1;
         text-align: center;
     }}
     .dash-header-title {{
-        font-size: 22px !important;
+        font-size: 20px !important;
         font-weight: 800;
         letter-spacing: 0.02em;
         margin: 0;
         line-height: 1.2;
     }}
-    .dash-header-sub {{
-        font-size: 13px;
+    .dash-header-date {{
+        font-size: 11px;
+        font-weight: 600;
         opacity: 0.88;
-        margin: 3px 0 0 0;
+        white-space: nowrap;
+        padding-left: 14px;
     }}
 
     /* ── KPI Cards ─────────────────────────────────────── */
@@ -1499,7 +1846,7 @@ def load_location_visit(path: str, cache_buster: tuple[int, int] | None = None) 
             return re.sub(r"[^a-z0-9]+", "", str(value).strip().lower())
 
         alias_groups = {
-            "Zone": ["zone", "zone name"],
+            "Zone": ["zone", "zone name", "sbu zone", "sbuzone", "sbu_zone"],
             "Planning Plant": [
                 "planning plant", "planningplant", "planning plant code",
                 "planningplantcode", "plant code", "plant"
@@ -1595,14 +1942,15 @@ def load_location_visit(path: str, cache_buster: tuple[int, int] | None = None) 
                 _records = []
                 for _vals, _grp in df.groupby(_agg_keys, dropna=False):
                     _statuses = _grp[_capa_col].astype(str).str.strip()
-                    # exclude blank and NaN CAPA Status rows (NaN becomes "nan" after astype str)
-                    _valid    = _statuses[(_statuses != "") & (_statuses.str.lower() != "nan")]
-                    if len(_valid) == 0:
-                        continue
+                    # Non-blank statuses (include all; "nan" from NaN is excluded as it means no data)
+                    _non_blank = _statuses[_statuses != ""]
+                    _valid     = _non_blank[_non_blank.str.lower() != "nan"]
                     _row = dict(zip(_agg_keys, _vals if isinstance(_vals, tuple) else [_vals]))
                     for _ec in _extra:
                         _nonnull = _grp[_ec].dropna()
                         _row[_ec] = _nonnull.iloc[0] if not _nonnull.empty else ""
+                    # Include audit even if all CAPA rows are blank (TotalRecomms=0)
+                    # Matches Sr. Manager logic which counts all Plant+Audit combos
                     _row["TotalRecomms"]  = len(_valid)
                     _row["ClosedRecomms"] = int(_valid.isin(_CLOSED).sum())
                     _row["OpenRecomms"]   = int(_valid.isin(_OPEN).sum())
@@ -2901,7 +3249,7 @@ def render_header(subtitle: str = "") -> None:
                                  Uses Master Logo.jpg if available, then Title.png, then pure-CSS.
       2. Dark-blue info strip: app title, subtitle, date/time.
     """
-    subtitle_html = f'<p class="dash-header-sub">{subtitle}</p>' if subtitle else ""
+    date_html = f'<span class="dash-header-date">&#128197; {subtitle}</span>' if subtitle else ""
 
     # ── Part 1: Full-width brand banner ─────────────────────────────────────
     title_uri = ""
@@ -2915,36 +3263,28 @@ def render_header(subtitle: str = "") -> None:
         pass
 
     if title_uri:
-        banner_html = f"""
-        <div class="hpcl-banner-wrap">
-            <img class="hpcl-banner-fg" src="{title_uri}" alt="HPCL SOD Exception Dashboard" />
-        </div>"""
+        banner_html = f'<div class="hpcl-banner-wrap"><img class="hpcl-banner-fg" src="{title_uri}" alt="HPCL SOD Exception Dashboard" /></div>'
     elif logo_uri:
-        banner_html = f"""
-        <div class="hpcl-banner-wrap">
-            <img class="hpcl-banner-fg" src="{logo_uri}" alt="HPCL SOD Exception Dashboard" />
-        </div>"""
+        banner_html = f'<div class="hpcl-banner-wrap"><img class="hpcl-banner-fg" src="{logo_uri}" alt="HPCL SOD Exception Dashboard" /></div>'
     else:
-        banner_html = f"""
-        <div class="hpcl-banner-wrap" style="
-                background:linear-gradient(135deg,#003087 0%,#0057A8 100%);
-                height:192px;display:flex;align-items:center;
-                padding:0 40px;justify-content:space-between;">
-            <div style="font-size:56px;font-weight:900;color:#FFFFFF;
-                        letter-spacing:.08em;">&#9981; HPCL</div>
-            <div style="font-size:22px;color:#AACCFF;font-style:italic;">
-                We bring Energy to Life</div>
-        </div>"""
+        banner_html = (
+            '<div class="hpcl-banner-wrap" style="'
+            'background:linear-gradient(135deg,#003087 0%,#0057A8 100%);'
+            'height:66px;display:flex;align-items:center;padding:0 40px;">'
+            '<div style="font-size:28px;font-weight:900;color:#FFFFFF;letter-spacing:.08em;">&#9981; HPCL</div>'
+            '</div>'
+        )
 
-    # ── Part 2: Dark-blue info strip ────────────────────────────────────────
+    # ── Part 2: Dark-blue info strip — title centred, date right-aligned ────
     header_html = (
         '<div class="dashboard-header-shell">'
         f'{banner_html}'
         '<div class="dash-header">'
+        '<div style="width:120px;"></div>'
         '<div class="dash-header-main">'
         '<p class="dash-header-title">SOD Exception Dashboard</p>'
-        f'{subtitle_html}'
         '</div>'
+        f'{date_html}'
         '</div>'
         '</div>'
     )
@@ -3234,32 +3574,40 @@ def render_sidebar(df_plant: pd.DataFrame) -> tuple:
 
         st.markdown("<hr/>", unsafe_allow_html=True)
 
-        st.markdown('<p class="sb-nav-lbl">&#128205; Navigation Filters</p>', unsafe_allow_html=True)
+        _sb_lv_drill = st.session_state.get("location_visit_page") == "drilldown"
 
-        all_zones = sorted(df_plant["Zone Name"].dropna().unique().tolist())
-        selected_zones = st.multiselect(
-            "Zone",
-            options=all_zones,
-            default=[],
-            placeholder="All Zones",
-        )
+        if not _sb_lv_drill:
+            st.markdown('<p class="sb-nav-lbl">&#128205; Navigation Filters</p>', unsafe_allow_html=True)
 
-        if selected_zones:
-            avail_plants = sorted(
-                df_plant[df_plant["Zone Name"].isin(selected_zones)]
-                ["Plant Name"].dropna().unique().tolist()
+            all_zones = sorted(df_plant["Zone Name"].dropna().unique().tolist())
+            selected_zones = st.multiselect(
+                "Zone",
+                options=all_zones,
+                default=[],
+                placeholder="All Zones",
             )
+
+            if selected_zones:
+                avail_plants = sorted(
+                    df_plant[df_plant["Zone Name"].isin(selected_zones)]
+                    ["Plant Name"].dropna().unique().tolist()
+                )
+            else:
+                avail_plants = sorted(df_plant["Plant Name"].dropna().unique().tolist())
+
+            selected_plants = st.multiselect(
+                "Plant / Location",
+                options=sorted(avail_plants),
+                default=[],
+                placeholder="All Plants",
+            )
+
+            st.markdown("<hr/>", unsafe_allow_html=True)
         else:
+            all_zones = sorted(df_plant["Zone Name"].dropna().unique().tolist())
+            selected_zones = []
             avail_plants = sorted(df_plant["Plant Name"].dropna().unique().tolist())
-
-        selected_plants = st.multiselect(
-            "Plant / Location",
-            options=sorted(avail_plants),
-            default=[],
-            placeholder="All Plants",
-        )
-
-        st.markdown("<hr/>", unsafe_allow_html=True)
+            selected_plants = []
 
         st.markdown('<p class="sb-nav-lbl">&#128197; Data As-Of Date</p>', unsafe_allow_html=True)
         from datetime import timedelta as _td
@@ -3372,7 +3720,7 @@ def _render_html_table(df: pd.DataFrame, col_labels: dict = None, max_height: in
         or st.session_state.get("dummy_tank_clicked") is True
         or st.session_state.get("pl_unblock_clicked") is True
     )
-    font_boost = 4 if is_drilldown_view else 0
+    font_boost = -2 if is_drilldown_view else 0
     header_font = 16 + font_boost
     cell_font = 15 + font_boost
     effective_height = 1100 if is_maximized else max_height
@@ -3470,19 +3818,24 @@ def render_dashboard(
 
     _aod_label = as_of_date.strftime("%d %b %Y") if as_of_date else ""
     render_header(subtitle=f"Data as of: {_aod_label}" if _aod_label else "")
-    # ── Navigation Filters (Zone & Plant) ────────────────────────────────────
-    st.markdown('<div class="sec-title">&#128205; Navigation Filters</div>', unsafe_allow_html=True)
-    filters_col1, filters_col2 = st.columns([1, 1])
-    zone_list = sorted(df_plant["Zone Name"].dropna().unique().tolist())
-    plant_list = sorted(df_plant["Plant Name"].dropna().unique().tolist())
-    with filters_col1:
-        selected_zone = st.selectbox("Select Zone", ["All Zones"] + zone_list, key="zone_filter")
-    with filters_col2:
-        if selected_zone != "All Zones":
-            filtered_plants = sorted(df_plant[df_plant["Zone Name"] == selected_zone]["Plant Name"].dropna().unique().tolist())
-        else:
-            filtered_plants = plant_list
-        selected_plant = st.selectbox("Select Plant / Location", ["All Plants"] + filtered_plants, key="plant_filter")
+    # ── Navigation Filters (Zone & Plant) — hidden when on Location Visit drill-down ──
+    _is_lv_drilldown = st.session_state.get("location_visit_page") == "drilldown"
+    if not _is_lv_drilldown:
+        st.markdown('<div class="sec-title">&#128205; Navigation Filters</div>', unsafe_allow_html=True)
+        filters_col1, filters_col2 = st.columns([1, 1])
+        zone_list = sorted(df_plant["Zone Name"].dropna().unique().tolist())
+        plant_list = sorted(df_plant["Plant Name"].dropna().unique().tolist())
+        with filters_col1:
+            selected_zone = st.selectbox("Select Zone", ["All Zones"] + zone_list, key="zone_filter")
+        with filters_col2:
+            if selected_zone != "All Zones":
+                filtered_plants = sorted(df_plant[df_plant["Zone Name"] == selected_zone]["Plant Name"].dropna().unique().tolist())
+            else:
+                filtered_plants = plant_list
+            selected_plant = st.selectbox("Select Plant / Location", ["All Plants"] + filtered_plants, key="plant_filter")
+    else:
+        selected_zone = "All Zones"
+        selected_plant = "All Plants"
 
     # --- LOCATION VISIT KPI LOGIC (after navigation filters) ---
     df_loc_filtered = pd.DataFrame()
@@ -3516,6 +3869,12 @@ def render_dashboard(
                 df_loc_work["Planning Plant"].astype(str).str.strip().str.replace(r"\.0$", "", regex=True)
             )
 
+            # Plant code aliases: SAP audit data uses different codes than PlantMaster
+            # 3708 = VISAKH NBOT → PlantMaster code 3718 (South Central Zone)
+            # 1833 = COCHIN BLACK TERMINAL → PlantMaster code 3833 (Cochin Zone)
+            _PLANT_ALIASES = {"3708": "3718", "1833": "3833"}
+            df_loc_work["Planning Plant"] = df_loc_work["Planning Plant"].replace(_PLANT_ALIASES)
+
             plant_map = (
                 df_plant[["Plant Code", "Plant Name", "Zone Name"]]
                 .copy()
@@ -3527,6 +3886,7 @@ def render_dashboard(
                 right_on="Plant Code",
                 how="left",
             )
+            # Zone always comes from PlantMaster (Zone Name column)
             df_loc_work["Zone"] = (
                 df_loc_work["Zone Name"]
                 .fillna("Unmapped")
@@ -3555,18 +3915,25 @@ def render_dashboard(
                     return (str(y)[2:] + "-" + str(y + 1)[2:], "Q" + str(((m - 4) // 3) + 1))
                 return (str(y - 1)[2:] + "-" + str(y)[2:], "Q4")
 
-            df_loc_work["_date_dedup"] = pd.to_datetime(
+            _dates = pd.to_datetime(
                 df_loc_work["Audit Start Date"], errors="coerce", dayfirst=True
             )
-            _fq = df_loc_work["_date_dedup"].apply(_get_fy_quarter)
-            df_loc_work["_FY"]      = _fq.apply(lambda x: x[0])
-            df_loc_work["_Quarter"] = _fq.apply(lambda x: x[1])
+            _fq = _dates.apply(_get_fy_quarter)
+            df_loc_work["_FY"]       = _fq.apply(lambda x: x[0])
+            df_loc_work["_Quarter"]  = _fq.apply(lambda x: x[1])
+            df_loc_work["_date_sort"] = _dates
+            # Dedup: per Plant+FY+Quarter keep the LATEST audit (highest date, then highest Audit Number)
+            # Matches Sr. Manager Inspection Dashboard's dedupByLatestAudit logic
             df_loc_work = (
                 df_loc_work
-                .sort_values(["_date_dedup", "Audit Number"], ascending=[False, False])
+                .sort_values(
+                    ["_date_sort", "Audit Number"],
+                    ascending=[False, False],
+                    na_position="last",
+                )
                 .drop_duplicates(subset=["Planning Plant", "_FY", "_Quarter"], keep="first")
                 .rename(columns={"_FY": "FY", "_Quarter": "Quarter"})
-                .drop(columns=["_date_dedup"])
+                .drop(columns=["_date_sort"])
                 .reset_index(drop=True)
             )
 
