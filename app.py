@@ -709,6 +709,7 @@ def render_location_visit_details(df: pd.DataFrame) -> None:
     st.markdown("<div class='sec-title'>&#9888; Locations Not Yet Audited (in scope)</div>", unsafe_allow_html=True)
     _pm = load_plant_master()[["Plant Code","Plant Name","Zone Name"]].copy()
     _pm["Plant Code"] = _pm["Plant Code"].astype(str).str.strip().str.replace(r"\.0$","",regex=True)
+    _pm = _pm[~_pm["Plant Code"].isin(LV_EXCLUDED_PLANTS)]
     _src_codes = set(df["Planning Plant"].astype(str).str.strip().str.replace(r"\.0$","",regex=True).unique())
     if sel_zone != "All":
         _pm = _pm[_pm["Zone Name"].astype(str) == sel_zone]
@@ -785,8 +786,22 @@ LOCATION_VISIT_PATH = (
     else LOCAL_LOCATION_VISIT_PATH
 )
 DUMMY_TANK_PATH     = os.path.join(REPORTS_DIR, "DUMMY TANK STOCK.xls")
-PIPELINE_STOCK_PATH = os.path.join(REPORTS_DIR, "PIPELINE STOCK.xls")       
+PIPELINE_STOCK_PATH = os.path.join(REPORTS_DIR, "PIPELINE STOCK.xls")
 TANK_TURNS_PATH     = os.path.join(REPORTS_DIR, "Tank Turn.xlsx")
+
+# Third-party operated (TOP) locations excluded from Location Visit evaluation.
+# These are not HPCL-operated depots and must not appear in compliance metrics,
+# zone/location rankings, or the "not yet audited" missing-locations list.
+LV_EXCLUDED_PLANTS = {
+    "1831",   # COCHIN TOP-KRL
+    "1898",   # KASARGOD TOP-ONGC
+    "1899",   # Ferokee TOP IOC
+    "1882",   # VNKOTI TOP-IOC
+    "1445",   # Borkhedi TOP BPC
+    "1396",   # MANMAD TOP-BPC
+    "1698",   # Dimapur TOP-IOC
+}
+
 # HPCL Corporate Color Palette
 C = {
     "primary"    : "#003087",
@@ -3868,6 +3883,11 @@ def render_dashboard(
             df_loc_work["Planning Plant"] = (
                 df_loc_work["Planning Plant"].astype(str).str.strip().str.replace(r"\.0$", "", regex=True)
             )
+
+            # Exclude third-party operated (TOP) locations from evaluation scope.
+            df_loc_work = df_loc_work[
+                ~df_loc_work["Planning Plant"].isin(LV_EXCLUDED_PLANTS)
+            ].copy()
 
             # 3708 and 3718 are the SAME physical plant (VISAKH NBOT) referred by
             # different SAP codes; 1833 and 3833 are the SAME plant (COCHIN BLACK
