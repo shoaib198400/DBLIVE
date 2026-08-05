@@ -789,10 +789,14 @@ PIPELINE_STOCK_PATH = os.path.join(REPORTS_DIR, "PIPELINE STOCK.xls")
 TANK_TURNS_PATH     = os.path.join(REPORTS_DIR, "Tank Turn.xlsx")
 
 # Plant codes excluded from the Location Visit KPI tile only.
-# Lalkuan (1222) and Jamnagar (1541) are not standard HPCL depots.
-# All TOPs and PSEUDO locations are identified dynamically from PlantMaster
-# by name pattern at tile computation time — see _build_lv_tile_exclusions().
-LV_TILE_EXTRA_EXCL = {"1222", "1541"}   # Lalkuan-IOC, HPCL Jamnagar
+# TOPs are identified dynamically from PlantMaster by name pattern.
+# Remaining exclusions are listed explicitly here.
+LV_TILE_EXTRA_EXCL = {
+    "1222",   # Lalkuan-IOC
+    "1541",   # HPCL Jamnagar
+    "1197",   # Pseudo location
+    "3139",   # Pseudo location
+}
 
 # HPCL Corporate Color Palette
 C = {
@@ -3972,10 +3976,10 @@ def render_dashboard(
             _pm_excl["_name"] = _pm_excl["Plant Name"].astype(str).str.strip().str.upper()
             _tile_excl_codes = set(
                 _pm_excl[
-                    _pm_excl["_name"].str.contains(r"\bTOP\b|PSEUDO", na=False) |
+                    _pm_excl["_name"].str.contains(r"\bTOP\b", na=False) |
                     _pm_excl["_code"].isin(LV_TILE_EXTRA_EXCL)
                 ]["_code"].tolist()
-            )
+            ) | LV_TILE_EXTRA_EXCL  # ensure explicit codes are included even if not in PlantMaster
 
             _df_tile_base = df_loc_filtered[
                 ~df_loc_filtered["Planning Plant"].isin(_tile_excl_codes)
