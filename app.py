@@ -786,7 +786,7 @@ LOCATION_VISIT_PATH = (
 )
 DUMMY_TANK_PATH     = os.path.join(REPORTS_DIR, "DUMMY TANK STOCK.xls")
 PIPELINE_STOCK_PATH = os.path.join(REPORTS_DIR, "PIPELINE STOCK.xls")
-TANK_TURNS_PATH     = os.path.join(REPORTS_DIR, "Tank Turn.xlsx")
+TANK_TURNS_PATH     = os.path.join(REPORTS_DIR, "Tank Turn 2025-26.xlsx")
 
 # Plant codes excluded from the Location Visit KPI tile only.
 # TOPs are identified dynamically from PlantMaster by name pattern.
@@ -7390,10 +7390,14 @@ def render_open_shortages_sales_details(
     """Drill-down detail page for Open Shortages (Sales)."""
     render_header(subtitle="&#128202; Open Shortages (Sales) &#8212; Drill Down")
 
-    back_col, _ = st.columns([1, 6])
+    back_col, tt_col, _ = st.columns([1, 2, 4])
     with back_col:
         if st.button("&#9664;  Back to Dashboard", key="btn_back_open_short_sales"):
             st.session_state["page"] = "dashboard"
+            st.rerun()
+    with tt_col:
+        if st.button("&#128666; Top TT Numbers by Shortage", key="btn_top_short_sales_vehicles"):
+            st.session_state["page"] = "top_short_sales_vehicles"
             st.rerun()
 
     st.markdown("""
@@ -7528,10 +7532,14 @@ def render_open_shortages_sto_details(
     """Drill-down detail page for Open Shortages (STO)."""
     render_header(subtitle="&#128202; Open Shortages (STO) &#8212; Drill Down")
 
-    back_col, _ = st.columns([1, 6])
+    back_col, tt_col, _ = st.columns([1, 2, 4])
     with back_col:
         if st.button("&#9664;  Back to Dashboard", key="btn_back_open_short_sto"):
             st.session_state["page"] = "dashboard"
+            st.rerun()
+    with tt_col:
+        if st.button("&#128666; Top Vehicles by Shortage", key="btn_top_short_sto_vehicles"):
+            st.session_state["page"] = "top_short_sto_vehicles"
             st.rerun()
 
     st.markdown("""
