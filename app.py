@@ -3854,6 +3854,7 @@ def render_dashboard(
     loc_visit_error = ""
     kpi_location_visit = 0
     kpi_location_compliance = 0.0
+    _prev_qtr_label = "Prev Qtr"   # safe default; overwritten once file loads correctly
 
     if os.path.exists(LOCATION_VISIT_PATH):
         df_loc = load_location_visit(
@@ -4390,7 +4391,7 @@ def render_dashboard(
             st.rerun()
     with col12:
         # Step 6: KPI tile UI for Location Visit (use kpi_card for alignment)
-        _lv_label = _prev_qtr_label if "kpi_location_visit" in dir() and kpi_location_visit >= 0 else "Prev Qtr"
+        _lv_label = _prev_qtr_label if kpi_location_visit > 0 else "Prev Qtr"
         clicked_location_visit = kpi_card(
             label="Location Visit | Compliance",
             value=f"{kpi_location_visit:,} Audits | {kpi_location_compliance * 100:.1f}%",
