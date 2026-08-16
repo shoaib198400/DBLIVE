@@ -2954,15 +2954,17 @@ def process_open_shortages_sales(
     )
     created_on_col = _pick_col(["CREATED ON"], required=True, label="Created on")
 
-    billing_doc_col = _pick_col(["BILLING DOCUMENT"])
-    shipment_col = _pick_col(["SHIPMENT NUMBER"])
-    sold_to_col = _pick_col(["SOLD-TO PARTY", "SOLD TO PARTY"])
+    billing_doc_col   = _pick_col(["BILLING DOCUMENT"])
+    billing_date_col  = _pick_col(["BILLING DATE", "BILL DATE", "BILLING DT",
+                                   "BILLINGDATE", "BILLED DATE"])
+    shipment_col      = _pick_col(["SHIPMENT NUMBER"])
+    sold_to_col       = _pick_col(["SOLD-TO PARTY", "SOLD TO PARTY"])
     service_agent_col = _pick_col(["SERVICE AGENT"])
-    sales_org_col = _pick_col(["SALES ORGANIZATION"])
-    delivery_col = _pick_col(["DELIVERY"])
-    material_col = _pick_col(["MATERIAL"])
-    billed_qty_col = _pick_col(["BILLED QUANTITY"])
-    tt_col = _pick_col(["COLUMN M", "UNNAMED: 12", "TT NUMBER"])
+    sales_org_col     = _pick_col(["SALES ORGANIZATION"])
+    delivery_col      = _pick_col(["DELIVERY"])
+    material_col      = _pick_col(["MATERIAL"])
+    billed_qty_col    = _pick_col(["BILLED QUANTITY"])
+    tt_col            = _pick_col(["COLUMN M", "UNNAMED: 12", "TT NUMBER"])
 
     if not all([plant_col, shortage_col, created_on_col]):
         return EMPTY
@@ -2971,10 +2973,11 @@ def process_open_shortages_sales(
     work[plant_col] = work[plant_col].astype(str).str.strip()
     work = work[work[plant_col] != ""]
 
-    # As-of-date filter on CREATED ON
+    # As-of-date filter — prefer Billing Date; fall back to Created On
     if as_of_date is not None:
         _aod = pd.Timestamp(as_of_date)
-        _parsed = pd.to_datetime(work[created_on_col], errors="coerce", dayfirst=True)
+        _date_col_for_filter = billing_date_col if billing_date_col else created_on_col
+        _parsed = pd.to_datetime(work[_date_col_for_filter], errors="coerce", dayfirst=True)
         work = work[_parsed.isna() | (_parsed <= _aod)].copy()
 
     # Ensure all critical drill-down columns exist even if source header/value is blank.
@@ -3131,17 +3134,19 @@ def process_open_shortages_sto(
     )
     created_on_col = _pick_col(["CREATED ON"], required=True, label="Created On")
 
-    billing_doc_col  = _pick_col(["BILLING DOCUMENT"])
-    shipment_col     = _pick_col(["SHIPMENT NUMBER"])
-    plant_col        = _pick_col(["PLANT"])
-    service_agent_col= _pick_col(["SERVICE AGENT"])
-    sales_org_col    = _pick_col(["SALES ORGANIZATION"])
-    delivery_col     = _pick_col(["DELIVERY"])
-    vehicle_col      = _pick_col(["VEHICLE"])
-    material_col     = _pick_col(["MATERIAL"])
-    billed_qty_col   = _pick_col(["BILLED QUANTITY"])
-    sales_unit_col   = _pick_col(["SALES UNIT", "SALES UNIT "])
-    created_by_col   = _pick_col(["CREATED BY"])
+    billing_doc_col   = _pick_col(["BILLING DOCUMENT"])
+    billing_date_col  = _pick_col(["BILLING DATE", "BILL DATE", "BILLING DT",
+                                   "BILLINGDATE", "BILLED DATE"])
+    shipment_col      = _pick_col(["SHIPMENT NUMBER"])
+    plant_col         = _pick_col(["PLANT"])
+    service_agent_col = _pick_col(["SERVICE AGENT"])
+    sales_org_col     = _pick_col(["SALES ORGANIZATION"])
+    delivery_col      = _pick_col(["DELIVERY"])
+    vehicle_col       = _pick_col(["VEHICLE"])
+    material_col      = _pick_col(["MATERIAL"])
+    billed_qty_col    = _pick_col(["BILLED QUANTITY"])
+    sales_unit_col    = _pick_col(["SALES UNIT", "SALES UNIT "])
+    created_by_col    = _pick_col(["CREATED BY"])
 
     if not all([supp_plant_col, shortage_col, created_on_col]):
         return EMPTY
@@ -3156,10 +3161,14 @@ def process_open_shortages_sto(
 
     work[created_on_col] = pd.to_datetime(work[created_on_col], errors="coerce", dayfirst=True)
 
-    # As-of-date filter on CREATED ON
+    # As-of-date filter — prefer Billing Date; fall back to Created On
     if as_of_date is not None:
         _aod = pd.Timestamp(as_of_date)
-        work = work[work[created_on_col].isna() | (work[created_on_col] <= _aod)].copy()
+        if billing_date_col:
+            _parsed = pd.to_datetime(work[billing_date_col], errors="coerce", dayfirst=True)
+            work = work[_parsed.isna() | (_parsed <= _aod)].copy()
+        else:
+            work = work[work[created_on_col].isna() | (work[created_on_col] <= _aod)].copy()
 
     today = pd.Timestamp(datetime.now().date())
     work["SHORTAGE AGE (DAYS)"] = (today - work[created_on_col]).dt.days
