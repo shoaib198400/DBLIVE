@@ -829,7 +829,7 @@ def build_consolidated_email_html(
     zone_rows_html = ""
     if zone_exception_summary_df is not None and not zone_exception_summary_df.empty:
         for i, (_, row) in enumerate(
-            zone_exception_summary_df.sort_values("Total Exceptions", ascending=False).iterrows()
+            zone_exception_summary_df.sort_values("Zone Name", ascending=True).iterrows()
         ):
             bg  = C_WHITE if i % 2 == 0 else C_ALT
             tdc = (f'style="padding:5px 8px;font-size:10px;text-align:center;'
