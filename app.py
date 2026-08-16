@@ -4440,11 +4440,23 @@ def render_dashboard(
     zone_summary_df = _build_zone_exception_summary(all_exception_plant_df)
     # Ensure consistent column order
     metric_cols = [
-        "Total Exceptions", "Pending DC", "Open Delivery", "Open In-Transit", "Open Sales Order", "Pending Invoice", "Shortage Sales (Billing Docs)", "Shortage STO (Billing Docs)"
+        "Total Exceptions", "Pending DC", "Open Delivery", "Open In-Transit",
+        "Open Sales Order", "Pending Invoice",
+        "Shortage Sales (Billing Docs)", "Shortage STO (Billing Docs)",
+        "Shortage Sales (Ltrs)", "Shortage STO (Ltrs)",
     ]
     zone_cols = [c for c in ["Zone Name", "Locations"] + metric_cols if c in zone_summary_df.columns]
     if zone_summary_df is not None and not zone_summary_df.empty:
-        _render_html_table(zone_summary_df[zone_cols], max_height=420)
+        _render_html_table(
+            zone_summary_df[zone_cols],
+            col_labels={
+                "Shortage Sales (Billing Docs)": "Short Sales (Docs)",
+                "Shortage STO (Billing Docs)":   "Short STO (Docs)",
+                "Shortage Sales (Ltrs)":          "Short Sales (Ltrs)",
+                "Shortage STO (Ltrs)":            "Short STO (Ltrs)",
+            },
+            max_height=420,
+        )
     else:
         st.info("No zonewise exception data available.")
 
@@ -4959,6 +4971,20 @@ def _extract_zone_plant_metric(summary_df: pd.DataFrame, source_col: str, output
     return out_df
 
 
+def _extract_shortage_qty(summary_df: pd.DataFrame, qty_col: str, output_col: str) -> pd.DataFrame:
+    """Extract total shortage quantity (Ltrs) per Zone+Plant from a KPI summary_df."""
+    cols = ["Zone Name", "Plant Name", output_col]
+    if summary_df is None or summary_df.empty or qty_col not in summary_df.columns:
+        return pd.DataFrame(columns=cols)
+    work = summary_df[["Zone Name", "Plant Name", qty_col]].copy()
+    work[qty_col] = pd.to_numeric(work[qty_col], errors="coerce").fillna(0.0)
+    return (
+        work.groupby(["Zone Name", "Plant Name"], dropna=False, as_index=False)[qty_col]
+        .sum()
+        .rename(columns={qty_col: output_col})
+    )
+
+
 def _extract_shortage_billing_counts(detail_df: pd.DataFrame, output_col: str) -> pd.DataFrame:
     """Return shortage counts by Zone+Plant using unique non-blank Billing Document."""
     cols = ["Zone Name", "Plant Name", output_col]
@@ -5036,7 +5062,25 @@ def _build_all_exception_plant_summary(
         ascending=[False, True, True],
     ).reset_index(drop=True)
 
-    return merged_df[["Zone Name", "Plant Name", *metric_cols, "Total Exceptions"]]
+    # Supplement with shortage quantities (float Ltrs) — not counted in Total Exceptions
+    qty_frames = [
+        _extract_shortage_qty(
+            open_short_sales_result.get("summary_df", pd.DataFrame()),
+            "Total Shortage Quantity (in Ltrs)", "Shortage Sales (Ltrs)"),
+        _extract_shortage_qty(
+            open_short_sto_result.get("summary_df", pd.DataFrame()),
+            "Total STO Shortage Quantity (in Ltrs)", "Shortage STO (Ltrs)"),
+    ]
+    for qf in qty_frames:
+        if qf is not None and not qf.empty:
+            merged_df = merged_df.merge(qf, on=["Zone Name", "Plant Name"], how="left")
+    for qcol in ["Shortage Sales (Ltrs)", "Shortage STO (Ltrs)"]:
+        if qcol not in merged_df.columns:
+            merged_df[qcol] = 0.0
+        merged_df[qcol] = pd.to_numeric(merged_df[qcol], errors="coerce").fillna(0.0).round(2)
+
+    qty_cols = ["Shortage Sales (Ltrs)", "Shortage STO (Ltrs)"]
+    return merged_df[["Zone Name", "Plant Name", *metric_cols, "Total Exceptions", *qty_cols]]
 
 
 def _build_zone_exception_summary(all_exception_plant_df: pd.DataFrame) -> pd.DataFrame:
@@ -5044,13 +5088,16 @@ def _build_zone_exception_summary(all_exception_plant_df: pd.DataFrame) -> pd.Da
     if all_exception_plant_df is None or all_exception_plant_df.empty:
         return pd.DataFrame(columns=["Zone Name", "Locations", "Total Exceptions"])
 
-    metric_cols = [
+    qty_col_names = {"Shortage Sales (Ltrs)", "Shortage STO (Ltrs)"}
+    count_cols = [
         c for c in all_exception_plant_df.columns
-        if c not in {"Zone Name", "Plant Name", "Total Exceptions"}
+        if c not in {"Zone Name", "Plant Name", "Total Exceptions"} and c not in qty_col_names
     ]
+    qty_cols = [c for c in all_exception_plant_df.columns if c in qty_col_names]
+    all_sum_cols = count_cols + qty_cols
 
     zone_totals = (
-        all_exception_plant_df.groupby("Zone Name", dropna=False, as_index=False)[metric_cols + ["Total Exceptions"]]
+        all_exception_plant_df.groupby("Zone Name", dropna=False, as_index=False)[all_sum_cols + ["Total Exceptions"]]
         .sum()
     )
     zone_locations = (
@@ -5061,8 +5108,11 @@ def _build_zone_exception_summary(all_exception_plant_df: pd.DataFrame) -> pd.Da
 
     zone_summary = zone_totals.merge(zone_locations, on="Zone Name", how="left")
     zone_summary["Locations"] = pd.to_numeric(zone_summary["Locations"], errors="coerce").fillna(0).astype(int)
+    # Keep qty cols as float (Ltrs), round to 2 dp
+    for qc in qty_cols:
+        zone_summary[qc] = pd.to_numeric(zone_summary[qc], errors="coerce").fillna(0.0).round(2)
     zone_summary = zone_summary.sort_values("Total Exceptions", ascending=False).reset_index(drop=True)
-    return zone_summary[["Zone Name", "Locations", "Total Exceptions", *metric_cols]]
+    return zone_summary[["Zone Name", "Locations", "Total Exceptions", *count_cols, *qty_cols]]
 
 
 def _build_combined_shortage_location_summary(
@@ -5490,8 +5540,10 @@ def render_zone_exception_drilldown(
         col_labels={
             "Zone Name": "Zone",
             "Total Exceptions": "Total",
-            "Shortage Sales (Billing Docs)": "Short Sales",
-            "Shortage STO (Billing Docs)": "Short STO",
+            "Shortage Sales (Billing Docs)": "Short Sales (Docs)",
+            "Shortage STO (Billing Docs)":   "Short STO (Docs)",
+            "Shortage Sales (Ltrs)":          "Short Sales (Ltrs)",
+            "Shortage STO (Ltrs)":            "Short STO (Ltrs)",
         },
         max_height=420,
     )
@@ -5577,7 +5629,8 @@ def render_top_exception_zones_page(
         c for c in [
             "Zone Name", "Locations", "Total Exceptions", "Pending DC", "Open Delivery",
             "Open In-Transit", "Open Sales Order", "Pending Invoice", "Tank Reco",
-            "Shortage Sales (Billing Docs)", "Shortage STO (Billing Docs)"
+            "Shortage Sales (Billing Docs)", "Shortage STO (Billing Docs)",
+            "Shortage Sales (Ltrs)", "Shortage STO (Ltrs)",
         ] if c in top_zones.columns
     ]
     _render_html_table(
@@ -5585,8 +5638,10 @@ def render_top_exception_zones_page(
         col_labels={
             "Zone Name": "Zone",
             "Total Exceptions": "Total",
-            "Shortage Sales (Billing Docs)": "Short Sales",
-            "Shortage STO (Billing Docs)": "Short STO",
+            "Shortage Sales (Billing Docs)": "Short Sales (Docs)",
+            "Shortage STO (Billing Docs)":   "Short STO (Docs)",
+            "Shortage Sales (Ltrs)":          "Short Sales (Ltrs)",
+            "Shortage STO (Ltrs)":            "Short STO (Ltrs)",
         },
         max_height=260,
     )
@@ -5609,8 +5664,10 @@ def render_top_exception_zones_page(
                     "Zone Name": "Zone",
                     "Plant Name": "Location",
                     "Total Exceptions": "Total",
-                    "Shortage Sales (Billing Docs)": "Short Sales",
-                    "Shortage STO (Billing Docs)": "Short STO",
+                    "Shortage Sales (Billing Docs)": "Short Sales (Docs)",
+                    "Shortage STO (Billing Docs)":   "Short STO (Docs)",
+                    "Shortage Sales (Ltrs)":          "Short Sales (Ltrs)",
+                    "Shortage STO (Ltrs)":            "Short STO (Ltrs)",
                 },
                 max_height=280,
             )
@@ -5677,8 +5734,10 @@ def render_top_exception_locations_page(
             "Zone Name": "Zone",
             "Plant Name": "Location",
             "Total Exceptions": "Total",
-            "Shortage Sales (Billing Docs)": "Short Sales",
-            "Shortage STO (Billing Docs)": "Short STO",
+            "Shortage Sales (Billing Docs)": "Short Sales (Docs)",
+            "Shortage STO (Billing Docs)":   "Short STO (Docs)",
+            "Shortage Sales (Ltrs)":          "Short Sales (Ltrs)",
+            "Shortage STO (Ltrs)":            "Short STO (Ltrs)",
         },
         max_height=420,
     )
