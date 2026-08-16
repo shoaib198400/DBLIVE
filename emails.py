@@ -690,11 +690,12 @@ def build_consolidated_email_html(
 ) -> str:
     """Build professional HTML email body for the consolidated HQ report (all zones)."""
 
-    # ── Palette (dark-charcoal + muted-gold; deliberately different from HPCL blue) ──
-    C_HDR       = "#1C2533"    # very dark navy/charcoal — header backgrounds
+    # ── Palette ───────────────────────────────────────────────────────────────
+    C_HDR       = "#1C2533"    # dark charcoal — page header / title bar
     C_HDR_MID   = "#2E3F55"    # medium dark for sub-elements
-    C_GOLD_BDR  = "#C9A227"    # gold border accent (header underline)
-    C_GOLD_TXT  = "#8A6B10"    # darker gold for readable text
+    C_TBL_HDR   = "#1A4775"    # deep navy-blue for table column headers
+    C_TBL_HDR_B = "#153760"    # table header border
+    C_GOLD_BDR  = "#C9A227"    # gold underline accent on letterhead
     C_BODY_BG   = "#ECEEF1"    # outer page background
     C_WHITE     = "#FFFFFF"
     C_BORDER    = "#D0D5DF"    # table/cell borders
@@ -703,11 +704,24 @@ def build_consolidated_email_html(
     C_RED       = "#B91C1C"    # exception value > 0
     C_GREEN     = "#166534"    # zero / compliant
     C_TEXT      = "#1A202C"    # primary body text
-    C_MUTED     = "#6B7280"    # secondary / label text
+    C_MUTED     = "#5C6878"    # secondary / label text
 
     _logo_uri = _logo_data_uri()
     as_of     = as_of_date or datetime.now().strftime("%d %b %Y")
     kpis      = grand_kpis or {}
+
+    # Ordinal day suffix: "31" → "31st", "1" → "1st", etc.
+    def _ordinal_date(date_str: str) -> str:
+        try:
+            _d = datetime.strptime(date_str.strip(), "%d %b %Y")
+            day = _d.day
+            sfx = ("th" if 11 <= day <= 13
+                   else {1: "st", 2: "nd", 3: "rd"}.get(day % 10, "th"))
+            return f"{day}<sup>{sfx}</sup> {_d.strftime('%B %Y')}"
+        except Exception:
+            return date_str
+
+    as_of_display = _ordinal_date(as_of)
 
     def _n(key, default=0):  return kpis.get(key, default)
     def _fmt_n(v):
@@ -735,36 +749,36 @@ def build_consolidated_email_html(
             f'color:{C_GOLD_BDR};letter-spacing:2px;">HPCL</span>'
         )
 
-    # ── KPI cards (left-accent border style, no coloured bg fills) ────────────
-    def _kpi_card(label, value, unit, accent):
+    # ── KPI cards (filled bg + rounded corners) ───────────────────────────────
+    def _kpi_card(label, value, unit, accent, bg):
         return (
-            f'<td style="width:25%;padding:3px 4px;">'
-            f'<div style="background:{C_WHITE};'
-            f'border:1px solid {C_BORDER};border-left:4px solid {accent};'
-            f'padding:8px 10px;">'
-            f'<div style="font-size:8px;font-weight:700;color:{C_MUTED};'
-            f'text-transform:uppercase;letter-spacing:0.5px;'
-            f'margin-bottom:3px;">{label}</div>'
-            f'<div style="font-size:17px;font-weight:700;color:{C_TEXT};'
+            f'<td style="width:25%;padding:4px 5px;">'
+            f'<div style="background:{bg};'
+            f'border:1px solid {accent};border-radius:7px;'
+            f'padding:10px 13px;">'
+            f'<div style="font-size:9px;font-weight:700;color:{accent};'
+            f'text-transform:uppercase;letter-spacing:0.4px;'
+            f'margin-bottom:4px;">{label}</div>'
+            f'<div style="font-size:19px;font-weight:700;color:{C_TEXT};'
             f'font-variant-numeric:tabular-nums;line-height:1.1;">{value}</div>'
-            f'<div style="font-size:8px;color:{C_MUTED};margin-top:1px;">{unit}</div>'
+            f'<div style="font-size:8.5px;color:{C_MUTED};margin-top:2px;">{unit}</div>'
             f'</div></td>'
         )
 
     kpi_row1 = (
         '<table width="100%" cellpadding="0" cellspacing="0"><tr>'
-        + _kpi_card("Pending DCs",       _fmt_n(_n("Pending DC")),           "documents",  "#DC2626")
-        + _kpi_card("Open Deliveries",   _fmt_n(_n("Open Delivery")),         "deliveries", "#DC2626")
-        + _kpi_card("Open In-Transit",   _fmt_n(_n("Open In-Transit")),       "STO orders", "#1D4ED8")
-        + _kpi_card("Open Sales Orders", _fmt_n(_n("Open Sales Order")),      "sales docs", "#B45309")
+        + _kpi_card("Pending DCs",       _fmt_n(_n("Pending DC")),           "documents",  "#B91C1C", "#FEF2F2")
+        + _kpi_card("Open Deliveries",   _fmt_n(_n("Open Delivery")),         "deliveries", "#B91C1C", "#FEF2F2")
+        + _kpi_card("Open In-Transit",   _fmt_n(_n("Open In-Transit")),       "STO orders", "#1D4ED8", "#EFF6FF")
+        + _kpi_card("Open Sales Orders", _fmt_n(_n("Open Sales Order")),      "sales docs", "#92400E", "#FFFBEB")
         + '</tr></table>'
     )
     kpi_row2 = (
         '<table width="100%" cellpadding="0" cellspacing="0"><tr>'
-        + _kpi_card("Pending Invoices",  _fmt_n(_n("Pending Invoice")),       "deliveries", "#B45309")
-        + _kpi_card("Shortage Sales",    _fmt_l(_n("Shortage Sales (Ltrs)")), "Litres",     "#DC2626")
-        + _kpi_card("Shortage STO",      _fmt_l(_n("Shortage STO (Ltrs)")),   "Litres",     "#DC2626")
-        + _kpi_card("Total Exceptions",  _fmt_n(_n("Total Exceptions")),      "all types",  "#6D28D9")
+        + _kpi_card("Pending Invoices",  _fmt_n(_n("Pending Invoice")),       "deliveries", "#92400E", "#FFFBEB")
+        + _kpi_card("Shortage Sales",    _fmt_l(_n("Shortage Sales (Ltrs)")), "Litres",     "#B91C1C", "#FEF2F2")
+        + _kpi_card("Shortage STO",      _fmt_l(_n("Shortage STO (Ltrs)")),   "Litres",     "#B91C1C", "#FEF2F2")
+        + _kpi_card("Total Exceptions",  _fmt_n(_n("Total Exceptions")),      "all types",  "#5B21B6", "#F5F3FF")
         + '</tr></table>'
     )
 
@@ -798,10 +812,10 @@ def build_consolidated_email_html(
     def _th(text, align="center", w=""):
         ws = f"width:{w};" if w else ""
         return (
-            f'<th style="{ws}background:{C_HDR};color:{C_WHITE};'
-            f'font-size:8.5px;font-weight:700;text-transform:uppercase;'
-            f'letter-spacing:0.35px;padding:6px 7px;text-align:{align};'
-            f'border:1px solid {C_HDR_MID};white-space:nowrap;">{text}</th>'
+            f'<th style="{ws}background:{C_TBL_HDR};color:{C_WHITE};'
+            f'font-size:10px;font-weight:700;text-transform:uppercase;'
+            f'letter-spacing:0.35px;padding:7px 8px;text-align:{align};'
+            f'border:1px solid {C_TBL_HDR_B};white-space:nowrap;">{text}</th>'
         )
 
     # ── Zone summary table ─────────────────────────────────────────────────────
@@ -818,9 +832,9 @@ def build_consolidated_email_html(
             zone_exception_summary_df.sort_values("Total Exceptions", ascending=False).iterrows()
         ):
             bg  = C_WHITE if i % 2 == 0 else C_ALT
-            tdc = (f'style="padding:5px 7px;font-size:9px;text-align:center;'
+            tdc = (f'style="padding:5px 8px;font-size:10px;text-align:center;'
                    f'border:1px solid {C_BORDER};background:{bg};"')
-            tdl = (f'style="padding:5px 7px;font-size:9px;font-weight:600;'
+            tdl = (f'style="padding:5px 8px;font-size:10px;font-weight:600;'
                    f'color:{C_HDR};text-align:left;border:1px solid {C_BORDER};'
                    f'background:{bg};"')
 
@@ -908,21 +922,21 @@ def build_consolidated_email_html(
                 loc_detail_html += (
                     f'<tr><td colspan="{n_loc_cols}" '
                     f'style="background:{C_ZONE_HDR};color:{C_HDR};'
-                    f'font-size:8.5px;font-weight:700;text-transform:uppercase;'
-                    f'letter-spacing:0.4px;padding:5px 8px;'
-                    f'border:1px solid {C_BORDER};border-top:2px solid {C_HDR_MID};">'
+                    f'font-size:9.5px;font-weight:700;text-transform:uppercase;'
+                    f'letter-spacing:0.4px;padding:6px 8px;'
+                    f'border:1px solid {C_BORDER};border-top:2px solid {C_TBL_HDR};">'
                     f'{zone}'
                     f'<span style="color:{C_MUTED};font-weight:400;'
-                    f'text-transform:none;font-size:8px;padding-left:10px;">'
+                    f'text-transform:none;font-size:8.5px;padding-left:10px;">'
                     f'{zlc} location(s) &nbsp;|&nbsp; Total Exceptions: {zt:,}'
                     f'</span></td></tr>'
                 )
 
-            tdc_l = (f'style="padding:4px 7px;font-size:8.5px;font-weight:500;'
+            tdc_l = (f'style="padding:5px 8px;font-size:9.5px;font-weight:500;'
                      f'text-align:left;border:1px solid {C_BORDER};color:{C_TEXT};"')
-            tdc_c = (f'style="padding:4px 7px;font-size:8.5px;text-align:center;'
+            tdc_c = (f'style="padding:5px 8px;font-size:9.5px;text-align:center;'
                      f'border:1px solid {C_BORDER};color:{C_MUTED};"')
-            tdc_n = (f'style="padding:4px 7px;font-size:8.5px;text-align:center;'
+            tdc_n = (f'style="padding:5px 8px;font-size:9.5px;text-align:center;'
                      f'border:1px solid {C_BORDER};"')
 
             tot = float(pd.to_numeric(row.get("Total Exceptions", 0), errors="coerce") or 0)
@@ -1001,19 +1015,19 @@ def build_consolidated_email_html(
       <table width="100%" cellpadding="0" cellspacing="0"><tr>
         <td width="64" style="vertical-align:middle;">{logo_html}</td>
         <td style="vertical-align:middle;padding-left:10px;">
-          <div style="font-size:11px;font-weight:700;color:{C_HDR};
+          <div style="font-size:12px;font-weight:700;color:{C_HDR};
                       letter-spacing:0.2px;line-height:1.4;">
             HINDUSTAN PETROLEUM CORPORATION LIMITED
           </div>
-          <div style="font-size:8.5px;color:{C_MUTED};margin-top:1px;">
-            Supply &amp; Operations Division &nbsp;&bull;&nbsp; SOD Exception Dashboard
+          <div style="font-size:9.5px;color:{C_MUTED};margin-top:2px;">
+            Supply, Operations &amp; Distribution &nbsp;&bull;&nbsp; SOD Exception Dashboard
           </div>
         </td>
         <td align="right" style="vertical-align:middle;white-space:nowrap;
                                   padding-left:12px;">
-          <div style="font-size:8px;color:{C_MUTED};text-transform:uppercase;
-                      letter-spacing:0.3px;">Report Date</div>
-          <div style="font-size:13px;font-weight:700;color:{C_HDR};">{as_of}</div>
+          <div style="font-size:8.5px;color:{C_MUTED};text-transform:uppercase;
+                      letter-spacing:0.3px;">Data as of</div>
+          <div style="font-size:14px;font-weight:700;color:{C_HDR};">{as_of_display}</div>
           <div style="font-size:7px;font-weight:700;letter-spacing:0.8px;
                       color:{C_WHITE};background:{C_HDR};
                       display:inline-block;padding:2px 6px;margin-top:2px;">
@@ -1027,7 +1041,7 @@ def build_consolidated_email_html(
     <tr><td style="background:{C_HDR};padding:9px 18px;">
       <table width="100%" cellpadding="0" cellspacing="0"><tr>
         <td>
-          <div style="font-size:13px;font-weight:700;color:{C_WHITE};
+          <div style="font-size:14px;font-weight:700;color:{C_WHITE};
                       letter-spacing:0.15px;">
             SOD Exception Report &mdash; All Zones Consolidated
           </div>
