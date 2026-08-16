@@ -593,6 +593,438 @@ def build_exception_email_html(
 </body></html>"""
 
 
+# ── Consolidated mail (all-zones HQ report) ───────────────────────────────────
+
+#: Primary recipient for the consolidated HQ report
+CONSOLIDATED_TO: str  = "shoaibrehman@hpcl.in"
+CONSOLIDATED_CC: str  = "SOD.OPNS.HQO@hpcl.in"
+CONSOLIDATED_BCC: str = "bhsgk@hpcl.in; shubham.tayal@hpcl.in"
+
+
+def build_consolidated_excel_attachment(
+    zone_exception_summary_df: pd.DataFrame,
+    all_exception_plant_df: pd.DataFrame,
+    detail_dfs: Dict[str, pd.DataFrame],
+    selected_exceptions: List[str],
+    as_of_date: str = "",
+) -> List[Tuple[str, bytes]]:
+    """Build one consolidated Excel workbook (all zones).
+
+    Sheets:
+      • Zone Summary       — zone-wise totals
+      • Location Detail    — all-zone location-wise exceptions
+      • <ExceptionLabel>   — raw detail per selected exception type (all zones)
+
+    Returns [(filename, bytes)] — a single-element list.
+    """
+    from openpyxl.styles import PatternFill, Font, Alignment, Border, Side
+
+    NAVY   = PatternFill("solid", fgColor="003087")
+    BLUE   = PatternFill("solid", fgColor="0057A8")
+    WHITE  = Font(bold=True, color="FFFFFF", size=10)
+    thin   = Side(style="thin", color="D5E2F3")
+    brd    = Border(left=thin, right=thin, top=thin, bottom=thin)
+    ctr    = Alignment(horizontal="center", vertical="center", wrap_text=True)
+    lft    = Alignment(horizontal="left",   vertical="center")
+
+    buf = io.BytesIO()
+    with pd.ExcelWriter(buf, engine="openpyxl") as writer:
+
+        def _style_sheet(ws, hdr_fill):
+            for cell in ws[1]:
+                cell.fill      = hdr_fill
+                cell.font      = WHITE
+                cell.alignment = ctr
+                cell.border    = brd
+            for row in ws.iter_rows(min_row=2):
+                for cell in row:
+                    cell.alignment = lft
+                    cell.border    = brd
+            for col in ws.columns:
+                max_len = max((len(str(c.value or "")) for c in col), default=10)
+                ws.column_dimensions[col[0].column_letter].width = min(max_len + 3, 42)
+            ws.row_dimensions[1].height = 28
+
+        # Sheet 1: Zone Summary
+        if zone_exception_summary_df is not None and not zone_exception_summary_df.empty:
+            zone_exception_summary_df.to_excel(
+                writer, index=False, sheet_name="Zone Summary"
+            )
+            _style_sheet(writer.sheets["Zone Summary"], NAVY)
+
+        # Sheet 2: Location Detail
+        if all_exception_plant_df is not None and not all_exception_plant_df.empty:
+            loc_df = all_exception_plant_df.copy()
+            drop = [c for c in loc_df.columns if c.startswith("_")]
+            loc_df = loc_df.drop(columns=drop, errors="ignore")
+            loc_df.to_excel(writer, index=False, sheet_name="Location Detail")
+            _style_sheet(writer.sheets["Location Detail"], BLUE)
+
+        # One sheet per exception type (all zones)
+        for exc_key in selected_exceptions:
+            label     = EXCEPTION_LABELS.get(exc_key, exc_key)
+            detail_df = detail_dfs.get(exc_key)
+            if detail_df is None or detail_df.empty:
+                continue
+            df_out = detail_df.copy()
+            drop   = [c for c in df_out.columns
+                      if c.startswith("_") or c in {"index", "level_0"}]
+            df_out = df_out.drop(columns=drop, errors="ignore").reset_index(drop=True)
+            sheet_name = label[:31]
+            df_out.to_excel(writer, index=False, sheet_name=sheet_name)
+            _style_sheet(writer.sheets[sheet_name], BLUE)
+
+    date_tag  = (as_of_date or datetime.now().strftime("%d%b%Y")).replace(" ", "")
+    filename  = f"HPCL_SOD_Consolidated_{date_tag}.xlsx"
+    return [(filename, buf.getvalue())]
+
+
+def build_consolidated_email_html(
+    as_of_date: str,
+    zone_exception_summary_df: pd.DataFrame,
+    all_exception_plant_df: pd.DataFrame,
+    selected_exceptions: List[str],
+    grand_kpis: Optional[dict] = None,
+    custom_intro: str = "",
+    attachment_names: Optional[List[str]] = None,
+) -> str:
+    """Build HTML body for the consolidated HQ report (all zones)."""
+
+    primary   = "#003087"
+    secondary = "#0057A8"
+    _logo_uri = _logo_data_uri()
+    as_of     = as_of_date or datetime.now().strftime("%d %b %Y")
+    kpis      = grand_kpis or {}
+
+    def _fmt_count(v):
+        try:    return f"{int(v):,}"
+        except: return str(v)
+
+    def _fmt_ltrs(v):
+        try:
+            n = float(v)
+            if n >= 1_000_000: return f"{n/1_000_000:.2f}M L"
+            if n >= 1_000:     return f"{n/1_000:.1f}K L"
+            return f"{n:,.0f} L"
+        except: return str(v)
+
+    def _n(key, default=0):
+        return kpis.get(key, default)
+
+    # ── Grand-total KPI tiles ──────────────────────────────────────────────────
+    row1_tiles = [
+        {"label": "Pending DCs",       "value": _fmt_count(_n("Pending DC")),
+         "sub":  "All zones",          "color": "#CC2929", "bg": "#FFF0F0"},
+        {"label": "Open Deliveries",   "value": _fmt_count(_n("Open Delivery")),
+         "sub":  "All zones",          "color": "#CC2929", "bg": "#FFF0F0"},
+        {"label": "Open In-Transit",   "value": _fmt_count(_n("Open In-Transit")),
+         "sub":  "All zones",          "color": "#0369A1", "bg": "#EFF8FF"},
+        {"label": "Open Sales Orders", "value": _fmt_count(_n("Open Sales Order")),
+         "sub":  "All zones",          "color": "#D97706", "bg": "#FFFBEB"},
+    ]
+    row2_tiles = [
+        {"label": "Pending Invoices",  "value": _fmt_count(_n("Pending Invoice")),
+         "sub":  "All zones",          "color": "#D97706", "bg": "#FFFBEB"},
+        {"label": "Shortage Sales",    "value": _fmt_ltrs(_n("Shortage Sales (Ltrs)")),
+         "sub":  "Total Litres",       "color": "#CC2929", "bg": "#FFF0F0"},
+        {"label": "Shortage STO",      "value": _fmt_ltrs(_n("Shortage STO (Ltrs)")),
+         "sub":  "Total Litres",       "color": "#CC2929", "bg": "#FFF0F0"},
+        {"label": "Total Exceptions",  "value": _fmt_count(_n("Total Exceptions")),
+         "sub":  "All types combined", "color": "#7C3AED", "bg": "#F5F3FF"},
+    ]
+
+    def _tile_row(tiles):
+        cells = "".join(
+            _kpi_tile_html(t["label"], t["value"], t["sub"], t["color"], t["bg"])
+            for t in tiles
+        )
+        return f"<tr>{cells}</tr>"
+
+    kpi_html = (
+        '<table width="100%" cellpadding="0" cellspacing="0">'
+        + _tile_row(row1_tiles)
+        + '<tr><td colspan="4" style="height:6px;"></td></tr>'
+        + _tile_row(row2_tiles)
+        + "</table>"
+    )
+
+    # ── Zone-wise summary table ────────────────────────────────────────────────
+    exc_display_cols = [c for c in selected_exceptions
+                        if zone_exception_summary_df is not None
+                        and c in zone_exception_summary_df.columns]
+    qty_display_cols = [c for c in ["Shortage Sales (Ltrs)", "Shortage STO (Ltrs)"]
+                        if zone_exception_summary_df is not None
+                        and c in zone_exception_summary_df.columns]
+
+    col_labels_map = {
+        **EXCEPTION_LABELS,
+        "Shortage Sales (Ltrs)": "Short Sales (Ltrs)",
+        "Shortage STO (Ltrs)":   "Short STO (Ltrs)",
+    }
+
+    all_data_cols = exc_display_cols + qty_display_cols
+    th_style = (f'style="background:{secondary};color:#fff;padding:7px 8px;'
+                f'font-size:10px;font-weight:700;text-align:center;'
+                f'border:1px solid rgba(255,255,255,0.2);white-space:nowrap;"')
+    th_left  = (f'style="background:{primary};color:#fff;padding:7px 10px;'
+                f'font-size:10px;font-weight:700;text-align:left;'
+                f'border:1px solid rgba(255,255,255,0.2);white-space:nowrap;"')
+
+    hdr_cells = "".join(
+        f"<th {th_style}>{col_labels_map.get(c, c)}</th>"
+        for c in all_data_cols
+    )
+    zone_table_hdr = (
+        f"<tr><th {th_left}>Zone</th>"
+        f'<th {th_style}>Locations</th>'
+        f'<th {th_style}>Total Exc.</th>'
+        f"{hdr_cells}</tr>"
+    )
+
+    zone_rows_html = ""
+    if zone_exception_summary_df is not None and not zone_exception_summary_df.empty:
+        for i, (_, row) in enumerate(
+            zone_exception_summary_df.sort_values("Total Exceptions", ascending=False).iterrows()
+        ):
+            bg   = "#FFFFFF" if i % 2 == 0 else "#F4F8FF"
+            td   = f'style="padding:6px 8px;font-size:10px;text-align:center;border:1px solid #E2EAF4;background:{bg};"'
+            td_l = f'style="padding:6px 10px;font-size:10px;font-weight:700;color:{primary};border:1px solid #E2EAF4;background:{bg};"'
+            data_cells = ""
+            for c in all_data_cols:
+                raw = row.get(c, 0)
+                try:
+                    if c in qty_display_cols:
+                        n = float(raw or 0)
+                        col_txt = f"{n:,.2f}"
+                        col_color = "#CC0000" if n > 0 else "#007700"
+                    else:
+                        n = int(float(raw or 0))
+                        col_txt = f"{n:,}"
+                        col_color = "#CC0000" if n > 0 else "#007700"
+                    fw = "700" if (float(raw or 0)) > 0 else "400"
+                    data_cells += (
+                        f'<td {td}><span style="color:{col_color};font-weight:{fw};">'
+                        f"{col_txt}</span></td>"
+                    )
+                except Exception:
+                    data_cells += f'<td {td}>{raw}</td>'
+            tot = int(pd.to_numeric(row.get("Total Exceptions", 0), errors="coerce") or 0)
+            locs = int(pd.to_numeric(row.get("Locations", 0), errors="coerce") or 0)
+            zone_rows_html += (
+                f"<tr>"
+                f"<td {td_l}>{row.get('Zone Name', '')}</td>"
+                f'<td {td}>{locs}</td>'
+                f'<td {td}><span style="color:#CC0000;font-weight:700;">{tot:,}</span></td>'
+                f"{data_cells}</tr>"
+            )
+    else:
+        n_col = len(all_data_cols) + 3
+        zone_rows_html = (
+            f'<tr><td colspan="{n_col}" style="text-align:center;padding:16px;'
+            f'color:#666;font-size:11px;">No zone exception data available.</td></tr>'
+        )
+
+    # Number of zones and locations
+    n_zones = (
+        int(zone_exception_summary_df["Zone Name"].nunique())
+        if zone_exception_summary_df is not None and not zone_exception_summary_df.empty else 0
+    )
+    n_locs = (
+        int(all_exception_plant_df["Plant Name"].nunique())
+        if all_exception_plant_df is not None and not all_exception_plant_df.empty else 0
+    )
+
+    # Attachments block
+    if attachment_names:
+        items = "".join(f'<li style="margin:3px 0;font-size:11px;">{n}</li>'
+                        for n in attachment_names)
+        attach_block = (
+            f'<tr><td style="padding:10px 28px 16px;">'
+            f'<p style="margin:0 0 5px;font-size:12px;font-weight:700;color:{primary};">'
+            f"&#128206; Attachments (location-wise detail):</p>"
+            f'<ul style="margin:0;padding-left:18px;color:#333;">{items}</ul>'
+            f"</td></tr>"
+        )
+    else:
+        attach_block = ""
+
+    intro_block = (
+        f'<p style="margin:0 0 12px;font-size:12px;line-height:1.6;color:#333;">'
+        f"{custom_intro}</p>"
+        if custom_intro else ""
+    )
+
+    return f"""<!DOCTYPE html>
+<html>
+<head><meta charset="UTF-8"></head>
+<body style="margin:0;padding:0;background:#F0F2F6;
+             font-family:'Segoe UI',Arial,sans-serif;">
+<table width="100%" cellpadding="0" cellspacing="0"
+       style="background:#F0F2F6;padding:20px 0;">
+  <tr><td align="center">
+  <table width="760" cellpadding="0" cellspacing="0"
+         style="background:#fff;border-radius:12px;overflow:hidden;
+                box-shadow:0 4px 20px rgba(0,48,135,0.12);">
+
+    <!-- Logo strip -->
+    <tr><td style="background:#ffffff;padding:12px 24px;border-bottom:2px solid #e8eef8;">
+      <table width="100%" cellpadding="0" cellspacing="0"><tr>
+        <td style="vertical-align:middle;">
+          {'<img src="' + _logo_uri + '" alt="HPCL" style="height:44px;width:auto;display:block;object-fit:contain;" />' if _logo_uri else '<div style="font-size:28px;font-weight:900;color:#003087;">HPCL</div>'}
+        </td>
+        <td style="vertical-align:middle;padding-left:14px;">
+          <div style="font-size:13px;font-weight:700;color:{primary};line-height:1.3;">
+            Hindustan Petroleum Corporation Limited
+          </div>
+          <div style="font-size:10px;color:#555;margin-top:2px;">Supply &amp; Operations Division</div>
+        </td>
+        <td align="right" style="vertical-align:middle;">
+          <span style="font-size:11px;color:#666;">Data as of: <b style="color:{primary};">{as_of}</b></span>
+        </td>
+      </tr></table>
+    </td></tr>
+
+    <!-- Title strip -->
+    <tr><td style="background:linear-gradient(135deg,{primary} 0%,{secondary} 100%);padding:14px 24px;">
+      <div style="font-size:18px;font-weight:900;color:#fff;letter-spacing:0.04em;">
+        &#128202;&nbsp; HPCL SOD — Consolidated Exception Report (All Zones)
+      </div>
+    </td></tr>
+
+    <!-- Summary pill -->
+    <tr><td style="padding:14px 28px 6px;">
+      <div style="display:inline-block;background:#E8F0FE;
+                  border-left:4px solid {primary};border-radius:6px;padding:8px 16px;">
+        <span style="font-size:14px;font-weight:700;color:{primary};">
+          &#127758;&nbsp; All Zones Summary
+        </span>
+        &nbsp;
+        <span style="font-size:11px;color:#555;">
+          {n_zones} Zone(s) &nbsp;|&nbsp; {n_locs} Location(s) with open exceptions
+        </span>
+      </div>
+    </td></tr>
+
+    <!-- Intro -->
+    <tr><td style="padding:8px 28px 10px;">
+      {intro_block}
+      <p style="margin:0;font-size:12px;color:#444;line-height:1.6;">
+        This is a <b>consolidated SOD exception report</b> covering all zones as on
+        <b>{as_of}</b>. The zone-wise summary is shown below; full location-wise detail
+        is available in the attached Excel workbook.
+      </p>
+    </td></tr>
+
+    <!-- Grand Total KPI tiles -->
+    <tr><td style="padding:4px 28px 2px;">
+      <p style="margin:0 0 6px;font-size:12px;font-weight:700;color:{primary};">
+        &#128202; Grand Total — All Zones KPI Summary
+      </p>
+      {kpi_html}
+    </td></tr>
+
+    <!-- Zone-wise table heading -->
+    <tr><td style="padding:14px 28px 4px;">
+      <p style="margin:0;font-size:12px;font-weight:700;color:{primary};">
+        &#128205; Zone-wise Exception Summary
+      </p>
+    </td></tr>
+
+    <!-- Zone table -->
+    <tr><td style="padding:0 28px 16px;">
+      <table width="100%" cellpadding="0" cellspacing="0"
+             style="border-collapse:collapse;border-radius:8px;overflow:hidden;
+                    border:1px solid #D5E2F3;font-size:10px;">
+        <thead>{zone_table_hdr}</thead>
+        <tbody>{zone_rows_html}</tbody>
+      </table>
+    </td></tr>
+
+    {attach_block}
+
+    <!-- Footer -->
+    <tr><td style="background:#F4F8FF;padding:14px 28px;border-top:1px solid #D5E2F3;">
+      <p style="margin:0;font-size:10px;color:#888;line-height:1.6;">
+        Auto-generated by <b>HPCL SOD Exception Dashboard (LIVEDB)</b>.
+        For queries contact
+        <a href="mailto:{SENDER_EMAIL}" style="color:{primary};">{SENDER_EMAIL}</a>.
+      </p>
+    </td></tr>
+
+  </table>
+  </td></tr>
+</table>
+</body></html>"""
+
+
+def send_consolidated_mail(
+    all_exception_plant_df: pd.DataFrame,
+    zone_exception_summary_df: pd.DataFrame,
+    detail_dfs: Dict[str, pd.DataFrame],
+    selected_exceptions: List[str],
+    as_of_date: str = "",
+    custom_intro: str = "",
+    test_mode: bool = False,
+    test_email: str = "",
+    grand_kpis: Optional[dict] = None,
+) -> dict:
+    """Send one consolidated exception mail (all zones) to HQ / shoaibrehman@hpcl.in.
+
+    test_mode=True  → mail goes to test_email only (no real recipients, no BCC).
+    Returns {"ok": bool, "mode": str, "msg": str, "attachments": [filenames]}
+    """
+    avail, reason = outlook_available()
+    if not avail:
+        return {"ok": False, "msg": reason}
+
+    as_of = as_of_date or datetime.now().strftime("%d %b %Y")
+
+    # Build grand-total KPI dict from zone summary if not provided
+    if grand_kpis is None and zone_exception_summary_df is not None and not zone_exception_summary_df.empty:
+        grand_kpis = {}
+        for col in zone_exception_summary_df.columns:
+            if col not in {"Zone Name", "Locations"}:
+                grand_kpis[col] = float(
+                    pd.to_numeric(zone_exception_summary_df[col], errors="coerce").fillna(0).sum()
+                )
+
+    # Build consolidated Excel
+    attachments = build_consolidated_excel_attachment(
+        zone_exception_summary_df, all_exception_plant_df,
+        detail_dfs, selected_exceptions, as_of_date=as_of,
+    )
+    attachment_names = [fname for fname, _ in attachments]
+
+    # Build HTML body
+    html_body = build_consolidated_email_html(
+        as_of_date=as_of,
+        zone_exception_summary_df=zone_exception_summary_df,
+        all_exception_plant_df=all_exception_plant_df,
+        selected_exceptions=selected_exceptions,
+        grand_kpis=grand_kpis,
+        custom_intro=custom_intro,
+        attachment_names=attachment_names,
+    )
+
+    subject = f"[HPCL SOD Consolidated Exception Report] All Zones — {as_of}"
+    if test_mode:
+        subject  = f"[TEST] {subject}"
+        to_str   = test_email or SENDER_EMAIL
+        cc_str   = ""
+        bcc_str  = ""
+    else:
+        to_str   = CONSOLIDATED_TO
+        cc_str   = CONSOLIDATED_CC
+        bcc_str  = CONSOLIDATED_BCC
+
+    result = _send_via_outlook(
+        to=to_str, subject=subject, html_body=html_body,
+        cc=cc_str, bcc=bcc_str, attachments=attachments,
+    )
+    result["attachments"] = attachment_names
+    return result
+
+
 # ── Public API ────────────────────────────────────────────────────────────────
 
 def send_exception_mail_for_zone(

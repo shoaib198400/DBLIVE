@@ -4495,8 +4495,9 @@ def render_dashboard(
     _render_mail_center(
         all_exception_plant_df,
         _detail_dfs_for_mail,
-        as_of_date    = as_of_date,
-        zone_kpi_dict = _zone_kpi_for_mail,
+        as_of_date               = as_of_date,
+        zone_kpi_dict            = _zone_kpi_for_mail,
+        zone_exception_summary_df= zone_exception_summary_df,
     )
 
     # ── Unmatched plant warning ───────────────────────────────────────────────
@@ -4601,6 +4602,7 @@ def _render_mail_center(
     detail_dfs: dict = None,
     as_of_date = None,
     zone_kpi_dict: dict = None,
+    zone_exception_summary_df: "pd.DataFrame | None" = None,
 ) -> None:
     """Mail Center — compose and send zone exception alerts via Outlook."""
     import emails as _em
@@ -4776,6 +4778,71 @@ def _render_mail_center(
                     )
                 for zone, r in fail_zones:
                     st.error(f"&#10060; **{zone}**: {r.get('msg', 'Unknown error')}")
+
+        # ── Consolidated HQ Mail button ───────────────────────────────────────
+        st.markdown("---")
+        st.markdown(
+            "**&#128202; Consolidated Report (All Zones → HQ)**  "
+            "One mail with all-zone summary + location detail Excel attachment."
+        )
+        consol_label = (
+            f"&#128300; [TEST] Consolidated to {test_email or _em.SENDER_EMAIL}"
+            if test_mode
+            else "&#128202; Send Consolidated to HQ"
+        )
+        if st.button(consol_label, key="mail_consolidated_btn", type="secondary"):
+            if not selected_exceptions:
+                st.warning("Select at least one exception type.")
+            else:
+                # Build zone exception summary if not provided
+                zone_sum_df = zone_exception_summary_df
+                if zone_sum_df is None or zone_sum_df.empty:
+                    try:
+                        zone_sum_df = _build_zone_exception_summary(all_exception_plant_df)
+                    except Exception:
+                        zone_sum_df = pd.DataFrame()
+
+                # Compute grand KPIs by summing zone_kpi_dict or from zone_sum_df
+                grand_kpis: dict = {}
+                if zone_kpi_dict:
+                    all_vals: dict = {}
+                    for zone_data in zone_kpi_dict.values():
+                        for k, v in zone_data.items():
+                            try:
+                                all_vals[k] = all_vals.get(k, 0.0) + float(v or 0)
+                            except Exception:
+                                pass
+                    grand_kpis = all_vals
+                elif zone_sum_df is not None and not zone_sum_df.empty:
+                    for col in zone_sum_df.columns:
+                        if col not in {"Zone Name", "Locations"}:
+                            grand_kpis[col] = float(
+                                pd.to_numeric(zone_sum_df[col], errors="coerce").fillna(0).sum()
+                            )
+
+                with st.spinner("Building consolidated mail…"):
+                    consol_result = _em.send_consolidated_mail(
+                        all_exception_plant_df   = all_exception_plant_df,
+                        zone_exception_summary_df= zone_sum_df,
+                        detail_dfs               = detail_dfs,
+                        selected_exceptions      = selected_exceptions,
+                        as_of_date               = as_of_label,
+                        custom_intro             = custom_intro,
+                        test_mode                = test_mode,
+                        test_email               = test_email,
+                        grand_kpis               = grand_kpis,
+                    )
+
+                if consol_result.get("ok"):
+                    attach_list = ", ".join(consol_result.get("attachments", []))
+                    mode_str = "sent" if consol_result.get("mode") == "sent" else "saved to Drafts"
+                    dest = test_email if test_mode else _em.CONSOLIDATED_TO
+                    st.success(
+                        f"&#9989; Consolidated mail {mode_str} → `{dest}`  "
+                        f"| Attachment: {attach_list or '(none)'}"
+                    )
+                else:
+                    st.error(f"&#10060; Consolidated mail failed: {consol_result.get('msg', 'Unknown error')}")
 
 
 def _build_exception_kpi_chart_df(
