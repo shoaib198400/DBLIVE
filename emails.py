@@ -48,7 +48,6 @@ SENDER_EMAIL = "shoaibrehman@hpcl.in"
 
 BCC_EMAILS: List[str] = [
     "SOD.OPNS.HQO@hpcl.in",
-    "bhsgk@hpcl.in",
     "shubham.tayal@hpcl.in",
 ]
 
