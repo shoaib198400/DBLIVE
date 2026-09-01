@@ -61,7 +61,7 @@ ZONE_EMAIL_MAP: Dict[str, Dict[str, str]] = {
     "Cochin Zone":          {"to": "kathir@hpcl.in",                    "cc": "kbanothu@hpcl.in"},
     "East Zone":            {"to": "santoshk@hpcl.in",                  "cc": "EZ.OND.IC@hpcl.in"},
     "Guwahati Zone":        {"to": "lodyuo@hpcl.in",                    "cc": "gurubachansingha@hpcl.in"},
-    "Jaipur Zone":          {"to": "rjprasad@hpcl.in",                  "cc": "NWF.OND.IC@hpcl.in"},
+    "Jaipur Zone":          {"to": "kumar.sumit@hpcl.in",               "cc": "NWF.OND.IC@hpcl.in"},
     "Noida (UP-West) Zone": {"to": "aradhnat@hpcl.in",                  "cc": "chraghu@hpcl.in"},
     "North Central Zone":   {"to": "rvpandey@hpcl.in",                  "cc": "adeshmukh@hpcl.in"},
     "North West Zone":      {"to": "sanjaykdewangan@hpcl.in",           "cc": "NWZ.OND.IC@hpcl.in"},
