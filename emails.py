@@ -512,7 +512,7 @@ def build_exception_email_html(
             Hindustan Petroleum Corporation Limited
           </div>
           <div style="font-size:10px;color:#555;margin-top:2px;">
-            Supply &amp; Operations Division
+            Supply, Operations &amp; Distribution
           </div>
         </td>
         <td align="right" style="vertical-align:middle;">
