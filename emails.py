@@ -1220,7 +1220,7 @@ def send_exception_mail_for_zone(
     )
 
     as_of   = as_of_date or datetime.now().strftime("%d %b %Y")
-    subject = f"[HPCL SOD Exception Alert] {zone_name} — {as_of}"
+    subject = f"SOD Exception Alerts - {zone_name}_{as_of}"
     if test_mode:
         subject = f"[TEST] {subject}"
 
