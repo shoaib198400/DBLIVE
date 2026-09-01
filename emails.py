@@ -503,8 +503,8 @@ def build_exception_email_html(
     <!-- Logo strip (white background) -->
     <tr><td style="background:#ffffff;padding:12px 24px;border-bottom:2px solid #e8eef8;">
       <table width="100%" cellpadding="0" cellspacing="0"><tr>
-        <td style="vertical-align:middle;">
-          {'<img src="' + _logo_uri + '" alt="HPCL" style="height:44px;width:auto;display:block;object-fit:contain;" />' if _logo_uri else '<div style="font-size:28px;font-weight:900;color:#003087;letter-spacing:.04em;">HPCL</div>'}
+        <td width="64" style="vertical-align:middle;">
+          {'<img src="' + _logo_uri + '" alt="HPCL" width="56" height="44" style="display:block;width:56px;height:44px;max-width:56px;max-height:44px;object-fit:contain;" />' if _logo_uri else '<div style="font-size:20px;font-weight:900;color:#003087;letter-spacing:.04em;">HPCL</div>'}
         </td>
         <td style="vertical-align:middle;padding-left:14px;">
           <div style="font-size:13px;font-weight:700;color:{accent};letter-spacing:0.02em;line-height:1.3;">
