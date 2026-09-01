@@ -524,7 +524,7 @@ def build_exception_email_html(
     <tr><td style="background:linear-gradient(135deg,{primary} 0%,{secondary} 100%);
                    padding:14px 24px;">
       <div style="font-size:18px;font-weight:900;color:#fff;letter-spacing:0.04em;">
-        &#128204;&nbsp; HPCL — SOD Exception Alert
+        HPCL — SOD Exception Alert
       </div>
     </td></tr>
 
@@ -534,7 +534,7 @@ def build_exception_email_html(
                   border-left:4px solid {primary};border-radius:6px;
                   padding:8px 16px;">
         <span style="font-size:14px;font-weight:700;color:{primary};">
-          &#128205;&nbsp;{zone_name}
+          {zone_name}
         </span>
         &nbsp;
         <span style="font-size:11px;color:#555;">
