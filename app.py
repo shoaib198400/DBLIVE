@@ -929,6 +929,17 @@ def inject_css() -> None:
         background-color: #FFFFFF !important;
         color: #262730 !important;
     }}
+    /* 5b. Date input — force visible text after date is picked */
+    [data-testid="stDateInput"] input,
+    [data-testid="stDateInput"] div[data-baseweb="input"],
+    [data-testid="stDateInput"] div[data-baseweb="input"] > div,
+    [data-testid="stDateInput"] [data-baseweb="base-input"],
+    [data-baseweb="calendar"] *,
+    div[class*="stDateInput"] input {{
+        background-color: #FFFFFF !important;
+        color: #262730 !important;
+        -webkit-text-fill-color: #262730 !important;
+    }}
     [data-testid="metric-container"] {{
         background-color: #FFFFFF !important;
     }}
