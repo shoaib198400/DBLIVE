@@ -931,14 +931,24 @@ def inject_css() -> None:
     }}
     /* 5b. Date input — force visible text after date is picked */
     [data-testid="stDateInput"] input,
+    [data-testid="stDateInput"] input:focus,
+    [data-testid="stDateInput"] input:not(:placeholder-shown),
+    [data-testid="stSidebar"] [data-testid="stDateInput"] input,
+    [data-testid="stSidebar"] [data-testid="stDateInput"] input:focus,
+    [data-testid="stSidebar"] [data-testid="stDateInput"] input:not(:placeholder-shown),
     [data-testid="stDateInput"] div[data-baseweb="input"],
     [data-testid="stDateInput"] div[data-baseweb="input"] > div,
     [data-testid="stDateInput"] [data-baseweb="base-input"],
+    [data-testid="stDateInput"] [data-baseweb="base-input"] input,
     [data-baseweb="calendar"] *,
     div[class*="stDateInput"] input {{
         background-color: #FFFFFF !important;
         color: #262730 !important;
         -webkit-text-fill-color: #262730 !important;
+        opacity: 1 !important;
+    }}
+    [data-testid="stSidebar"] [data-testid="stDateInput"] div[data-baseweb="input"] {{
+        background-color: #FFFFFF !important;
     }}
     [data-testid="metric-container"] {{
         background-color: #FFFFFF !important;
