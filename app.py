@@ -3854,6 +3854,8 @@ def render_dashboard(
     loc_visit_error = ""
     kpi_location_visit = 0
     kpi_location_compliance = 0.0
+    _loc_total = 0
+    _loc_closed = 0
 
     if os.path.exists(LOCATION_VISIT_PATH):
         df_loc = load_location_visit(
