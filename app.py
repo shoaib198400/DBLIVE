@@ -1,4 +1,4 @@
-﻿import base64
+import base64
 import hashlib
 import inspect
 import pandas as pd
@@ -766,7 +766,10 @@ LOGO_IMG_PATH  = os.path.join(MASTER_DIR, "Master Logo.jpg")
 SIDE_PANEL_LOGO_PATH = os.path.join(MASTER_DIR, "Side Panel Logo.png")
 
 # Default data file paths (fallback when no file is uploaded)
-REPORTS_DIR         = os.path.join(BASE_DIR, "Reports")
+REPORTS_DIR         = next(
+    (_d for _d in (os.path.join(BASE_DIR, "Reports"), os.path.join(BASE_DIR, "Report")) if os.path.isdir(_d)),
+    os.path.join(BASE_DIR, "Reports"),
+)
 PENDING_DC_PATH     = os.path.join(REPORTS_DIR, "PENDING_DC_SOD.xlsx")
 OPEN_DELIVERY_PATH  = os.path.join(REPORTS_DIR, "OPEN_DELIVERY.xls")
 OPEN_INTRANSIT_PATH = os.path.join(REPORTS_DIR, "OPEN_INTRANSIT_SOD.xls")
@@ -775,7 +778,10 @@ PEND_INV_PATH       = os.path.join(REPORTS_DIR, "PENDING_INVOICES_SOD.xls")
 SHORT_SALES_PATH    = os.path.join(REPORTS_DIR, "SOD_OPEN_SHORTAGES_SALES.xls")
 SHORT_STO_PATH      = os.path.join(REPORTS_DIR, "SOD_OPEN_SHORTAGES_STO.xls")
 TANK_RECO_PATH      = os.path.join(REPORTS_DIR, "TANK_RECO_REPORT.xls")
-LOCAL_LOCATION_VISIT_PATH = os.path.join(REPORTS_DIR, "LOCATION_VISIT.xls")
+LOCAL_LOCATION_VISIT_PATH = next(
+    (_p for _p in (os.path.join(REPORTS_DIR, "LOCATION_VISIT.xls"), os.path.join(REPORTS_DIR, "LOCATION_VISIT.xlsx")) if os.path.exists(_p)),
+    os.path.join(REPORTS_DIR, "LOCATION_VISIT.xls"),
+)
 EXTERNAL_LOCATION_VISIT_PATH = r"D:\SHOAIB\VS CODE PROJECTS\EXCEPTION SNAPSHOT DASHBOARD\Reports\LOCATION_VISIT.xls"
 LOCATION_VISIT_PATH = (
     LOCAL_LOCATION_VISIT_PATH
@@ -943,6 +949,11 @@ def inject_css() -> None:
     [data-baseweb="calendar"] *,
     div[class*="stDateInput"] input {{
         background-color: #FFFFFF !important;
+        color: #262730 !important;
+        -webkit-text-fill-color: #262730 !important;
+        opacity: 1 !important;
+    }}
+    [data-testid="stSidebar"] [data-testid="stDateInput"] *:not(svg):not(path) {{
         color: #262730 !important;
         -webkit-text-fill-color: #262730 !important;
         opacity: 1 !important;
@@ -3884,6 +3895,8 @@ def render_dashboard(
     loc_visit_error = ""
     kpi_location_visit = 0
     kpi_location_compliance = 0.0
+    _loc_total = 0
+    _loc_closed = 0
     _prev_qtr_label = "Prev Qtr"   # safe default; overwritten once file loads correctly
 
     if os.path.exists(LOCATION_VISIT_PATH):
